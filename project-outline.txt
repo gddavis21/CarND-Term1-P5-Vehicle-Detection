@@ -1,0 +1,19 @@
+train binary "vehicle detection" classifier
+    training data = thumbnail images of vehicles & not-vehicles
+    extract combination of color space, color histogram & HOG descriptor features
+    train classifier like SVM, DT, ensemble, etc.
+    explore parameter optimization via grid search and/or randomized search
+    
+vehicle detection pipeline (given the trained classifier)
+    optimization: pre-compute HOG descriptors on full image
+    optimization: pre-compute resized images for each search window size
+    compute set of search windows within the image
+    possible: add search windows computed from prior detections
+    for each search window
+        resize image section to match training image size
+        compute feature vector for resized section
+        if vehicle then add window to match-list
+    build heat-map from match-list
+    threshold heat-map
+    compute vehicle bounding boxes from thresholded heat-map
+    annotate input image with vehicle bounding boxes
