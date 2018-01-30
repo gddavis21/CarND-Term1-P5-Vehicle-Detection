@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import cv2
-from skimage.feature import hog
+import skimage
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
@@ -12,11 +12,14 @@ from collections import namedtuple
 class VehicleDetectionPipeline:
     '''
     '''
-    def __init__(self, camera_cal, extract_veh_ftrs, veh_ftr_scaler, veh_clf):
+    def __init__(self, ROI_rect, camera_cal, feature_extractor, feature_scaler, veh_clf):
+        self._ROI_rect = ROI_rect
         self._camera_cal = camera_cal
-        self._extract_veh_ftrs = extract_veh_ftrs
-        self._veh_ftr_scaler = veh_ftr_scaler
+        self._feature_extractor = feature_extractor
+        self._feature_scaler = feature_scaler
         self._veh_clf = veh_clf
+        
+        self._search_windows = self._compute_search_windows()
         
     def __call__(self, raw_rgb):
         '''
@@ -43,7 +46,24 @@ class VehicleDetectionPipeline:
         
         return result
         
-    def _compute_search_windows(x1, y1, x2, y2, size, overlap):
+    def _compute_search_windows(self):
+        return [
+            _compute_search_windows(self._ROI_rect, 128, 16),
+            _compute_search_windows(self._ROI_rect, 112, 14),
+            _compute_search_windows(self._ROI_rect, 96, 12),
+            _compute_search_windows(self._ROI_rect, 80, 10),
+            _compute_search_windows(self._ROI_rect, 64, 8),
+            _compute_search_windows(self._ROI_rect, 48, 6),
+            _compute_search_windows(self._ROI_rect, 32, 4)
+        ]
+        
+    
+    @staticmethod
+    def _compute_search_windows(ROI_rect, size, overlap):
+        x1 = ROI_rect[0][0]
+        y1 = ROI_rect[0][1]
+        x2 = ROI_rect[1][0]
+        y2 = ROI_rect[1][1]
         # Compute the number of pixels per step in x/y
         dx = int(size[0] * (1.0 - overlap[0]))
         dy = int(size[1] * (1.0 - overlap[1]))
@@ -68,8 +88,8 @@ class VehicleDetectionPipeline:
         for window in windows:
             L,T = window[0][0], window[0][1]
             R,B = window[1][0], window[1][1]
-            features = self._extract_veh_ftrs(rgb_img[T:B, L:R])
-            features = self._veh_ftr_scaler.transform(np.array(features).reshape(1,-1))
+            features = self._feature_extractor.extract_features(rgb_img[T:B, L:R])
+            features = self._feature_scaler.transform(np.array(features).reshape(1,-1))
             if self._veh_clf.predict(features) == 1:
                 matches.append(window)
         return matches
@@ -138,51 +158,61 @@ class VehicleFeatureExtractor:
         self._hog_params = hog_params
         self._patch_cache = {}
         
-    def __call__(self, rgb):
+    def extract_features(self, rgb):
         self._reset_patches(rgb)
         features = []
 
         if self._spatial_params:
-            image_size = self._spatial_params.image_size
-            features.append(cv2.resize(
-                self._get_patch(self._spatial_params.color_space), 
-                (image_size, image_size)).ravel())
+            features.append(self._bin_spatial())
 
         if self._hist_params:
-            # compute separate hue & saturation histograms
-            hsv = self._get_patch('HSV')
-            hue_hist = np.histogram(
-                hsv[:,:,0], 
-                bins=self._hist_params.hue_bins,
-                range=(0,179))
-            sat_hist = np.histogram(
-                hsv[:,:,1],
-                bins=self._hist_params.sat_bins,
-                range=(0,255))
-            # concatenate histograms into a single feature vector
-            features.append(np.concatenate((hue_hist[0], sat_hist[0]))
+            features.append(self._hsv_histogram())
         
         if self._hog_params:
-            cell_size = self._hog_params.cell_size
-            block_size = self._hog_params.block_size
-            features.append(hog(
-                self._get_patch(self._hog_params.color_space),
-                orientations=self._hog_params.num_orient,
-                pixels_per_cell=(cell_size, cell_size),
-                cells_per_block=(block_size, block_size),
-                block_norm='L2',
-                visualize=False,
-                transform_sqrt=True,
-                feature_vector=True))
+            features.append(self._hog_features())
         
         return np.concatenate(features)
+
+    def _bin_spatial(self):
+        patch = self._get_patch(self._spatial_params.color_space)
+        size = self._spatial_params.image_size
+        return cv2.resize(patch, (size, size)).ravel()
         
-    def _reset_patches(self, img_rgb):
+    def _hsv_histogram(self):
+        # compute separate hue & saturation histograms
+        hsv = self._get_patch('HSV')
+        hue_hist = np.histogram(
+            hsv[:,:,0], 
+            bins=self._hist_params.hue_bins,
+            range=(0,179))
+        sat_hist = np.histogram(
+            hsv[:,:,1],
+            bins=self._hist_params.sat_bins,
+            range=(0,255))
+        # concatenate histograms into a single feature vector
+        return np.concatenate((hue_hist[0], sat_hist[0])
+        
+    def _hog_features(self):
+        # HOG descriptor features
+        patch = self._get_patch(self._hog_params.color_space)
+        cell_size = self._hog_params.cell_size
+        block_size = self._hog_params.block_size
+        return skimage.feature.hog(
+            patch, # hog automatically uses strongest channel gradient
+            orientations=self._hog_params.num_orient,
+            pixels_per_cell=(cell_size, cell_size),
+            cells_per_block=(block_size, block_size),
+            block_norm='L2',
+            visualize=False,
+            transform_sqrt=True,
+            feature_vector=True)
+        
+    def _reset_patches(self, rgb):
         self._patch_cache.clear()
-        if img_rgb.shape == (64,64,3):
-            self._patch_cache['RGB'] = img_rgb
+        if rgb.shape == (64,64,3):
+            self._patch_cache['RGB'] = rgb
         else:
-            self._patch_cache['RGB'] = cv2.resize(img_rgb, (64,64,3))
+            self._patch_cache['RGB'] = cv2.resize(rgb, (64,64,3))
             
     def _get_patch(self, color_space):
         if color_space not in self._patch_cache:

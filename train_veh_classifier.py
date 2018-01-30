@@ -22,7 +22,7 @@ hog_params = veh.HogFeatureParams(
     num_orient=12)
 
 # create feature extractor    
-extract_features = veh.VehicleFeatureExtractor(
+extractor = veh.VehicleFeatureExtractor(
     spatial_params=spatial_params,
     hist_params=hist_params,
     hog_params=hog_params)
@@ -46,15 +46,13 @@ notcar_paths = [
 
 for path in car_paths:
     for img_file in glob.iglob(path):
-        bgr = cv2.imread(img_file)
-        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-        car_features.append(extract_features(rgb))
+        rgb = cv2.cvtColor(cv2.imread(img_file), cv2.COLOR_BGR2RGB)
+        car_features.append(extractor.extract_features(rgb))
 
 for path in notcar_paths:
     for img_file in glob.iglob(path):
-        bgr = cv2.imread(img_file)
-        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-        notcar_features.append(extract_features(rgb))
+        rgb = cv2.cvtColor(cv2.imread(img_file), cv2.COLOR_BGR2RGB)
+        notcar_features.append(extractor.extract_features(rgb))
 
 # build features matrix
 X = np.vstack((car_features, notcar_features)).astype(np.float64)                        
@@ -79,3 +77,6 @@ clf.fit(X_train, y_train)
 
 # measure accuracy on test set
 print('Test Accuracy: ', round(clf.score(X_test, y_test), 4))
+
+# TODO: pickle classifier, scaler & feature extractor for re-use
+# TODO: extend this script to a grid search parameter optimization
