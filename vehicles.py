@@ -9,6 +9,14 @@ from sklearn.metrics import accuracy_score
 from sklearn.svm import LinearSVC
 from collections import namedtuple
 
+ScaledROI = namedtuple('ScaledROI', [
+    'scale',    # integer 2-tuple, scale image by scale[0]/scale[1]
+    'ROI'       # rectangle within resized image,
+    'offs',
+    'slide'
+])
+
+
 class VehicleDetectionPipeline:
     '''
     '''
@@ -48,6 +56,10 @@ class VehicleDetectionPipeline:
         
     def _compute_search_windows(self):
         return [
+            _compute_search_windows(self._ROI_rect, 192, 24),
+            _compute_search_windows(self._ROI_rect, 176, 22),
+            _compute_search_windows(self._ROI_rect, 160, 20),
+            _compute_search_windows(self._ROI_rect, 144, 18),
             _compute_search_windows(self._ROI_rect, 128, 16),
             _compute_search_windows(self._ROI_rect, 112, 14),
             _compute_search_windows(self._ROI_rect, 96, 12),
@@ -57,6 +69,36 @@ class VehicleDetectionPipeline:
             _compute_search_windows(self._ROI_rect, 32, 4)
         ]
         
+    @staticmethod
+    def _compute_scaled_ROI(orig_ROI, scale):
+        L = orig_ROI[0][0] * scale[0] // scale[1]
+        T = orig_ROI[0][1] * scale[0] // scale[1]
+        R = orig_ROI[1][0] * scale[0] // scale[1] 
+        B = orig_ROI[1][1] * scale[0] // scale[1] 
+        w = R - L
+        h = B - T
+        block = 64
+        delta = 8
+        offs = ((w-block) % delta // 2, (h-block) % delta // 2)
+        slide = ((w-block) // delta + 1, (h-block) // delta + 1)
+        return ScaledROI(scale=scale, offs=offs, slide=slide)
+    
+    def _compute_scales(self, orig_ROI):
+        L = ROI_rect[0][0]
+        
+        return [
+            _compute_scaled_ROI(orig_ROI, (1,3)),   # tile = 192, delta = 24
+            _compute_scaled_ROI(orig_ROI, (4,11)),  # tile = 176, delta = 22
+            _compute_scaled_ROI(orig_ROI, (2,5)),   # tile = 160, delta = 20
+            _compute_scaled_ROI(orig_ROI, (4,9)),   # tile = 144, delta = 18
+            _compute_scaled_ROI(orig_ROI, (1,2)),   # tile = 128, delta = 16
+            _compute_scaled_ROI(orig_ROI, (4,7)),   # tile = 112, delta = 14
+            _compute_scaled_ROI(orig_ROI, (2,3)),   # tile =  96, delta = 12
+            _compute_scaled_ROI(orig_ROI, (4,5)),   # tile =  80, delta = 10
+            _compute_scaled_ROI(orig_ROI, (1,1)),   # tile =  64, delta =  8
+            _compute_scaled_ROI(orig_ROI, (4,3)),   # tile =  48, delta =  6
+            _compute_scaled_ROI(orig_ROI, (2,1))    # tile =  32, delta =  4
+        ]
     
     @staticmethod
     def _compute_search_windows(ROI_rect, size, overlap):
