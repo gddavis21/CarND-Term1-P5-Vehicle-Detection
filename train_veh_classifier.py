@@ -47,12 +47,12 @@ notcar_paths = [
 for path in car_paths:
     for img_file in glob.iglob(path):
         rgb = cv2.cvtColor(cv2.imread(img_file), cv2.COLOR_BGR2RGB)
-        car_features.append(extractor.extract_features(rgb))
+        car_features.append(extractor.extract_image_features(rgb))
 
 for path in notcar_paths:
     for img_file in glob.iglob(path):
         rgb = cv2.cvtColor(cv2.imread(img_file), cv2.COLOR_BGR2RGB)
-        notcar_features.append(extractor.extract_features(rgb))
+        notcar_features.append(extractor.extract_image_features(rgb))
 
 # build features matrix
 X = np.vstack((car_features, notcar_features)).astype(np.float64)                        
