@@ -2,15 +2,15 @@ import numpy as np
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import cv2
-import skimage
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
-from sklearn.svm import LinearSVC
+from skimage.feature import hog
+import sklearn.preprocessing
+import sklearn.svm
 from collections import namedtuple
+from collections import deque
 
-ScaledROI = namedtuple('ScaledROI', [
+ROI_Scaler = namedtuple('ROI_Scaler', [
     'scale',    # integer 2-tuple, scale image by scale[0]/scale[1]
+    'ROI',
     'offs',
     'steps'
 ])
@@ -19,15 +19,12 @@ ScaledROI = namedtuple('ScaledROI', [
 class VehicleDetectionPipeline:
     '''
     '''
-    def __init__(self, ROI_rect, camera_cal, feature_extractor, feature_scaler, veh_clf):
-        self._ROI_rect = ROI_rect
+    def __init__(self, camera_cal, veh_detector):
+        '''
+        '''
         self._camera_cal = camera_cal
-        self._feature_extractor = feature_extractor
-        self._feature_scaler = feature_scaler
-        self._veh_clf = veh_clf
-        
-        # self._search_windows = self._compute_search_windows()
-        self._scales = _compute_scales(ROI_rect)
+        self._veh_detector = veh_detector
+        self._match_deque = deque(maxlen=4)
         
     def __call__(self, raw_rgb):
         '''
@@ -35,32 +32,16 @@ class VehicleDetectionPipeline:
         '''
         # undistort raw camera image
         rgb = self._camera_cal.undistort_image(raw_rgb)
-        T,L = self._ROI_rect[0][1], self._ROI_rect[0][0]
-        B,R = self._ROI_rect[1][1], self._ROI_rect[1][0]
-        image = rgb[T:B,L:R]
-        W = R-L
-        H = B-T
+
+        # find vehicle match tiles
+        veh_matches = self._veh_detector.match_vehicles(rgb)
+        self._match_deque.append(veh_matches)
         
-        matches = []
-        
-        for scale in self._scales:
-            a = scale.scale[0]
-            b = scale.scale[1]
-            scaled_W = (R-L) * a // b
-            scaled_H = (B-T) * a // b
-            scaled_image = cv2.resize(image, (scaled_W, scaled_H))
-            self._feature_extractor.set_source_image(scaled_image)
-            for i in range(scale.steps[0]):
-                for j in range(scale.steps[1]):
-                    x = scale.offs[0] + 8*i
-                    y = scale.offs[1] + 8*j
-                    ftrs = self._feature_extractor.extract_patch_features((x,y))
-                    ftrs = self._feature_scaler.transform(np.array(ftrs).reshape(1,-1))
-                    if self._veh_clf.predict(ftrs) == 1:
-                        match_L, match_R = x * b // a, (x+64) * b // a
-                        match_T, match_B = y * b // a, (y+64) * b // a
-                        matches.append(((match_L, match_T), (match_R, match_B)))
-        
+        if len(self._match_deque) < self._match_deque.maxlen:
+            return rgb
+            
+        veh_boxes = self._locate_vehicles(self._match_deque, rgb.shape, threshold=3)
+            
         # pre-compute HOG descriptors over entire ROI
         
         # compute search windows
@@ -75,99 +56,46 @@ class VehicleDetectionPipeline:
         
         # draw vehicle boxes on image
         result = np.copy(rgb)
-        self._draw_vehicle_boxes(result, vboxes)
-        
+        self._draw_vehicle_boxes(result, veh_boxes)
         return result
         
-    # def _compute_search_windows(self):
-        # return [
-            # _compute_search_windows(self._ROI_rect, 192, 24),
-            # _compute_search_windows(self._ROI_rect, 176, 22),
-            # _compute_search_windows(self._ROI_rect, 160, 20),
-            # _compute_search_windows(self._ROI_rect, 144, 18),
-            # _compute_search_windows(self._ROI_rect, 128, 16),
-            # _compute_search_windows(self._ROI_rect, 112, 14),
-            # _compute_search_windows(self._ROI_rect, 96, 12),
-            # _compute_search_windows(self._ROI_rect, 80, 10),
-            # _compute_search_windows(self._ROI_rect, 64, 8),
-            # _compute_search_windows(self._ROI_rect, 48, 6),
-            # _compute_search_windows(self._ROI_rect, 32, 4)
-        # ]
-        
-    @staticmethod
-    def _compute_scales(orig_ROI):
+    def _locate_vehicles(self, matches_list, img_shape, threshold):
         '''
         '''
-        return [
-            _compute_scaled_ROI(orig_ROI, (1,3)),   # tile = 192, delta = 24
-            _compute_scaled_ROI(orig_ROI, (4,11)),  # tile = 176, delta = 22
-            _compute_scaled_ROI(orig_ROI, (2,5)),   # tile = 160, delta = 20
-            _compute_scaled_ROI(orig_ROI, (4,9)),   # tile = 144, delta = 18
-            _compute_scaled_ROI(orig_ROI, (1,2)),   # tile = 128, delta = 16
-            _compute_scaled_ROI(orig_ROI, (4,7)),   # tile = 112, delta = 14
-            _compute_scaled_ROI(orig_ROI, (2,3)),   # tile =  96, delta = 12
-            _compute_scaled_ROI(orig_ROI, (4,5)),   # tile =  80, delta = 10
-            _compute_scaled_ROI(orig_ROI, (1,1)),   # tile =  64, delta =  8
-            _compute_scaled_ROI(orig_ROI, (4,3)),   # tile =  48, delta =  6
-            _compute_scaled_ROI(orig_ROI, (2,1))    # tile =  32, delta =  4
-        ]
-    
-    @staticmethod
-    def _compute_scaled_ROI(orig_ROI, scale):
-        block = 64
-        delta = 8
-        L = orig_ROI[0][0] * scale[0] // scale[1]
-        T = orig_ROI[0][1] * scale[0] // scale[1]
-        R = orig_ROI[1][0] * scale[0] // scale[1] 
-        B = orig_ROI[1][1] * scale[0] // scale[1] 
-        w = R - L
-        h = B - T
-        offs = ((w-block) % delta // 2, (h-block) % delta // 2)
-        steps = ((w-block) // delta + 1, (h-block) // delta + 1)
-        return ScaledROI(scale=scale, offs=offs, steps=steps)
-    
-    # @staticmethod
-    # def _compute_search_windows(ROI_rect, size, overlap):
-        # x1 = ROI_rect[0][0]
-        # y1 = ROI_rect[0][1]
-        # x2 = ROI_rect[1][0]
-        # y2 = ROI_rect[1][1]
-        # # Compute the number of pixels per step in x/y
-        # dx = int(size[0] * (1.0 - overlap[0]))
-        # dy = int(size[1] * (1.0 - overlap[1]))
-        # # Compute the number of windows in x/y
-        # nx = ((x2-x1) - size[0]) // dx + 1
-        # ny = ((y2-y1) - size[1]) // dy + 1
-        # # Compute & return list of search windows
-        # windows = []
-        # for row in range(ny):
-            # T = y1 + row*dy 
-            # B = T + size[1]
-            # for col in range(nx):
-                # # Calculate each window position
-                # L = x1 + col*dx
-                # R = L + size[0]
-                # # Append window position to list
-                # windows.append(((L,T), (R,B)))
-        # return windows
+        # make heat-map
+        heatmap = np.zeros(img_shape)
+        for matches in matches_list:
+            for match in matches:
+                heatmap[match[0][1]:match[1][1], match[0][0]:match[1][0]] += 1
+                
+        # threshold heat-map
+        heatmap[heatmap <= threshold] = 0
         
-    def _match_vehicles(self, rgb_img, windows):
-        matches = []
-        for window in windows:
-            L,T = window[0][0], window[0][1]
-            R,B = window[1][0], window[1][1]
-            features = self._feature_extractor.extract_features(rgb_img[T:B, L:R])
-            features = self._feature_scaler.transform(np.array(features).reshape(1,-1))
-            if self._veh_clf.predict(features) == 1:
-                matches.append(window)
-        return matches
+        # label objects in heat-map
+        from scipy.ndimage.measurements import label
+        labels, obj_count = label(heatmap)
+        
+        # compute object bounding boxes
+        obj_boxes = []
+        for obj_number in range(1, obj_count+1):
+            # Find pixels with each car_number label value
+            nonzero = (labels == obj_number).nonzero()
+            # Identify x and y values of those pixels
+            nonzeroy = np.array(nonzero[0])
+            nonzerox = np.array(nonzero[1])
+            # Define a bounding box based on min/max x and y
+            L,T = np.min(nonzerox), np.min(nonzeroy)
+            R,B = np.max(nonzerox), np.max(nonzeroy)
+            obj_boxes.append(((L,T), (R,B)))
+            
+        return obj_boxes
         
     def _draw_vehicle_boxes(self, img, bboxes):
         color = (0,0,255)
         thickness = 5
         for box in bboxes:
             cv2.rectangle(img, box[0], box[1], color, thickness)
-            
+                
             
 def convert_image(img_rgb, color_space):
     color_space = color_space.upper()
@@ -176,30 +104,91 @@ def convert_image(img_rgb, color_space):
     elif color_space == 'HSV':
         return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HSV)
     elif color_space == 'LUV':
-        return cv2.cvtColor(image, cv2.COLOR_RGB2LUV)
+        return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2LUV)
     elif color_space == 'HLS':
-        return cv2.cvtColor(image, cv2.COLOR_RGB2HLS)
+        return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HLS)
     elif color_space == 'YUV':
-        return cv2.cvtColor(image, cv2.COLOR_RGB2YUV)
+        return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2YUV)
     elif color_space == 'YCRCB':
-        return cv2.cvtColor(image, cv2.COLOR_RGB2YCrCb)
+        return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2YCrCb)
     elif color_space == 'GRAY':
         return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
     else:
         return None
         
-# # configuration of color distribution features    
-# ColorFeatureParams = namedtuple('ColorFeatureParams', [
-    # 'color_space',      # 'RGB', 'HSV', 'HLS', 'LUV', 'YUV', 'YCrCb'
-    # 'enable_spatial',   # enable spatial features: True/False
-    # 'spatial_size',     # spatial features size (8,8), (32,32), etc.
-    # 'enable_hist',      # enable histogram features: True/False
-    # 'hist_bins',        # histogram bins
-    # 'hue_bins',
-    # 'sat_bins',
-    # 'hist_range'        # histogram range
-# ])
 
+class VehicleDetector:
+    '''
+    '''
+    def __init__(self, feature_extractor, feature_scaler, veh_clf):
+        '''
+        '''
+        self._feature_extractor = feature_extractor
+        self._feature_scaler = feature_scaler
+        self._veh_clf = veh_clf
+        self._ROI_scalers = self._make_ROI_scalers()
+        
+    def match_vehicles(self, rgb):
+        '''
+        '''
+        matches = []
+        for ROI_scaler in self._ROI_scalers:
+            ROI = ROI_scaler.ROI
+            L,T = ROI_scaler.ROI[0][0], ROI_scaler.ROI[0][1]
+            R,B = ROI_scaler.ROI[1][0], ROI_scaler.ROI[1][1]
+            a,b = ROI_scaler.scale[0], ROI_scaler.scale[1]
+            sL,sT = L*a//b, T*a//b
+            sR,sB = R*a//b, B*a//b
+            scaled_image = cv2.resize(rgb[T:B,L:R], (sR-sL, sB-sT))
+            self._feature_extractor.set_source_image(scaled_image)
+            for i in range(ROI_scaler.steps[0]):
+                for j in range(ROI_scaler.steps[1]):
+                    x = ROI_scaler.offs[0] + 16*i
+                    y = ROI_scaler.offs[1] + 16*j
+                    ftrs = self._feature_extractor.extract_patch_features((x,y))
+                    ftrs = self._feature_scaler.transform(np.array(ftrs).reshape(1,-1))
+                    if self._veh_clf.predict(ftrs) == 1:
+                        mL, mR = (x*b//a)+L, ((x+64)*b//a)+L
+                        mT, mB = (y*b//a)+T, ((y+64)*b//a)+T
+                        matches.append(((mL, mT), (mR, mB)))
+        return matches
+    
+    def _make_ROI_scalers(self):
+        '''
+        '''
+        return [
+            # self._make_ROI_scaler((4,1),  ((0,400), (1280,420))),
+            self._make_ROI_scaler((8,3), ((340,416), (940,440))), # tile = 24
+            self._make_ROI_scaler((2,1), ((300,412), (980,444))),  # tile =  32, step =  4
+            self._make_ROI_scaler((4,3), ((260,408), (1020,456))),  # tile =  48, step =  6
+            self._make_ROI_scaler((1,1), ((220,404), (1060,468))),  # tile =  64, step =  8
+            self._make_ROI_scaler((4,5), ((0,400), (1280,480))),  # tile =  80, step = 10
+            self._make_ROI_scaler((2,3), ((0,396), (1280,492))),  # tile =  96, step = 12
+            # self._make_ROI_scaler((4,7),  ((0,400), (1280,540))),  # tile = 112, step = 14
+            self._make_ROI_scaler((1,2), ((0,388), (1280,516))),  # tile = 128, step = 16
+            self._make_ROI_scaler((2,5), ((0,380), (1280,540))),   # tile = 160
+            self._make_ROI_scaler((1,3), ((0,372), (1280,564))),   # tile = 192
+            self._make_ROI_scaler((2,7), ((0,364), (1280,588))),   # tile = 224
+            self._make_ROI_scaler((1,4), ((0,356), (1280,612))),   # tile = 256
+            self._make_ROI_scaler((2,9), ((0,348), (1280,636))),    # tile = 288
+            self._make_ROI_scaler((1,5), ((0,340), (1280,660)))    # tile = 320
+        ]
+    
+    def _make_ROI_scaler(self, scale, ROI):
+        '''
+        '''
+        block = 64
+        delta = 16
+        a,b = scale[0], scale[1]
+        sL,sT = ROI[0][0]*a//b, ROI[0][1]*a//b
+        sR,sB = ROI[1][0]*a//b, ROI[1][1]*a//b
+        sW = sR - sL
+        sH = sB - sT
+        offs = ((sW-block) % delta // 2, (sH-block) % delta // 2)
+        steps = ((sW-block) // delta + 1, (sH-block) // delta + 1)
+        return ROI_Scaler(scale=scale, ROI=ROI, offs=offs, steps=steps)
+        
+        
 ColorSpatialParams = namedtuple('ColorSpatialParams', [
     'color_space',
     'image_size'
@@ -215,7 +204,7 @@ ColorHistParams = namedtuple('ColorHistParams', [
 HogFeatureParams = namedtuple('HogFeatureParams', [
     'color_space',
     'cell_size',
-    'block_size'
+    'block_size',
     'num_orient'
 ])
 
@@ -273,16 +262,16 @@ class VehicleFeatureExtractor:
         return self.extract_patch_features((0,0))
 
     def _bin_spatial(self, patch_corner):
-        T,L = patch_corner[1], patch_corner[0]
-        B,R = T+64, L+64
+        L,T = patch_corner[0], patch_corner[1]
+        R,B = L+64, T+64
         patch = self._src_spat[T:B,L:R]
         size = self._spatial_params.image_size
         return cv2.resize(patch, (size, size)).ravel()
         
     def _hsv_histogram(self, patch_corner):
         # compute separate hue & saturation histograms
-        T,L = patch_corner[1], patch_corner[0]
-        B,R = T+64, L+64
+        L,T = patch_corner[0], patch_corner[1]
+        R,B = L+64, T+64
         hsv_patch = self._src_hist[T:B,L:R]
         hue_hist = np.histogram(
             hsv_patch[:,:,0], 
@@ -300,8 +289,8 @@ class VehicleFeatureExtractor:
         cell_size = self._hog_params.cell_size
         block_size = self._hog_params.block_size
         blocks_per_patch = (64 // cell_size) - block_size + 1
-        T,L = (patch_corner[1] // 8), (patch_corner[0] // 8)
-        B,R = T+blocks_per_patch, L+blocks_per_patch
+        L,T = (patch_corner[0] // 8), (patch_corner[1] // 8)
+        R,B = L+blocks_per_patch, T+blocks_per_patch
         hog_feat1 = self._src_hog[0][T:B,L:R].ravel()
         hog_feat2 = self._src_hog[1][T:B,L:R].ravel()
         hog_feat3 = self._src_hog[2][T:B,L:R].ravel()
@@ -321,15 +310,14 @@ class VehicleFeatureExtractor:
             # patch_cache[color_space] = convert_image(rgb_patch, color_space)
         # return patch_cache[color_space]
         
-    @staticmethod
-    def _compute_hog_channel(img, num_orient, cell_size, block_size):
-        return skimage.feature.hog(
+    def _compute_hog_channel(self, img, num_orient, cell_size, block_size):
+        return hog(
             img,
             orientations=num_orient,
             pixels_per_cell=(cell_size, cell_size),
             cells_per_block=(block_size, block_size),
             block_norm='L2',
-            visualize=False,
+            visualise=False,
             transform_sqrt=True,
             feature_vector=False)
     
@@ -338,9 +326,9 @@ class VehicleFeatureExtractor:
         num_orient = self._hog_params.num_orient
         cell_size = self._hog_params.cell_size
         block_size = self._hog_params.block_size
-        hog1 = _compute_hog_channel(hog_img[:,:,0], num_orient, cell_size, block_size)
-        hog2 = _compute_hog_channel(hog_img[:,:,1], num_orient, cell_size, block_size)
-        hog3 = _compute_hog_channel(hog_img[:,:,2], num_orient, cell_size, block_size)
+        hog1 = self._compute_hog_channel(hog_img[:,:,0], num_orient, cell_size, block_size)
+        hog2 = self._compute_hog_channel(hog_img[:,:,1], num_orient, cell_size, block_size)
+        hog3 = self._compute_hog_channel(hog_img[:,:,2], num_orient, cell_size, block_size)
         return (hog1, hog2, hog3)
                 
     # def _reset_patches(self, rgb):
