@@ -8,6 +8,7 @@ import pickle
 import vision as vis
 import vehicles as veh
 
+# calibrate camera from checkerboard images
 def calibration_progress(msg):
     print(msg)
 
@@ -18,13 +19,21 @@ camera_cal.calibrate_from_chessboard(
     save_diags=False,
     progress=calibration_progress)
 
-print('loading saved classifier...')
+print('loading trained classifier...')
 clf_data_path = sys.argv[1]
 
+# load trained classifier, create vehicle recognizer
 spatial_params, hist_params, hog_params, ftr_scaler, veh_clf = veh.load_trained_classifier(clf_data_path)
 
-ftr_extractor = veh.VehicleFeatureExtractor(spatial_params, hist_params, hog_params)
-veh_detector = veh.VehicleDetector(ftr_extractor, ftr_scaler, veh_clf)
+ftr_extractor = veh.VehicleFeatureExtractor(
+    spatial_params, 
+    hist_params, 
+    hog_params)
+    
+match_vehicles = veh.VehicleRecognizer(
+    ftr_extractor, 
+    ftr_scaler, 
+    veh_clf)
 
 def process_test_image(src_path, dst_path):
     print('processing %s' % src_path)
@@ -33,15 +42,13 @@ def process_test_image(src_path, dst_path):
     rgb_in = camera_cal.undistort_image(rgb_in)
 
     start_time = time.time()
-    veh_boxes = veh_detector.match_vehicles(rgb_in)
+    veh_boxes = match_vehicles(rgb_in)
     elapsed_time = time.time() - start_time
     print('processing time = %.3f' % elapsed_time)
 
     rgb_out = np.copy(rgb_in)
-    box_color = (0,0,255)
-    box_thick = 1
     for box in veh_boxes:
-        cv2.rectangle(rgb_out, box[0], box[1], box_color, box_thick)
+        cv2.rectangle(rgb_out, box[0], box[1], (0,0,255), 1)
 
     bgr_out = cv2.cvtColor(rgb_out, cv2.COLOR_RGB2BGR)
     cv2.imwrite(dst_path, bgr_out)

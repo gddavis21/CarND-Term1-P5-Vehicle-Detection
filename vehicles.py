@@ -13,6 +13,99 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 
 
+
+# class VehicleDetectionPipeline:
+    # '''
+    # '''
+    # def __init__(self, camera_cal, detect_vehicles):
+        # '''
+        # camera_cal: instance of vision.CameraCal
+        # detect_vehicles: function(image) --> vehicle bounding boxes
+        # '''
+        # self._camera_cal = camera_cal
+        # self._detect_vehicles = detect_vehicles
+        
+    # def __call__(self, raw_rgb):
+        # '''
+        # Vehicle detection pipeline. Input raw RGB images from camera.
+        # '''
+        # # undistort raw image from camera
+        # rgb = self._camera_cal.undistort_image(raw_rgb)
+        
+        # # locate vehicles (bounding boxes) on image
+        # veh_boxes = detect_vehicles(rgb)
+        
+        # if veh_boxes:
+            # # draw vehicle bounding boxes on the image
+            # self._draw_vehicle_boxes(rgb, veh_boxes)
+            
+        # return rgb
+        
+    # def _draw_vehicle_boxes(self, img, bboxes):
+        # color = (0,0,255)
+        # thickness = 5
+        # for box in bboxes:
+            # cv2.rectangle(img, box[0], box[1], color, thickness)
+                
+            
+
+class VehicleDetector:
+    '''
+    '''
+    def __init__(self, frame_size, match_vehicles, history_depth, heat_thresh):
+        '''
+        frame_size: (width,height) tuple
+        match_vehicles: function(image) --> vehicle candidate boxes
+        history_depth: number of consecutive frames to accumulate
+        heat_thresh: heatmap threshold for object detection
+        '''
+        self._frame_size = frame_size
+        self._match_vehicles = match_vehicles
+        self._match_history = deque(maxlen=history_depth)
+        self._heat_thresh = heat_thresh
+        
+    def __call__(self, rgb):
+        '''
+        function(image) --> bounding boxes of detected vehicles
+        '''
+        # find vehicle candidates and add to history
+        veh_matches = self._match_vehicles(rgb)
+        self._match_history.append(veh_matches)
+
+        # combine info from past few frames (history) to detect vehicle objects
+        veh_boxes = []
+        
+        # detect nothing until we have enough history
+        if len(self._match_history) == self._match_history.maxlen:
+            
+            # make heat-map from history of candidates
+            heatmap = np.zeros((self._frame_size[1], self._frame_size[0]))
+            for matches in self._match_history:
+                for match in matches:
+                    heatmap[match[0][1]:match[1][1], match[0][0]:match[1][0]] += 1
+                    
+            # threshold heat-map
+            heatmap[heatmap <= self._heat_thresh] = 0
+            
+            # label vehicle objects in heat-map
+            from scipy.ndimage.measurements import label
+            labels, veh_count = label(heatmap)
+            
+            # compute vehicle bounding boxes
+            for veh_number in range(1, veh_count+1):
+                # Find pixels with each car_number label value
+                nonzero = (labels == veh_number).nonzero()
+                # Identify x and y values of those pixels
+                nonzeroy = np.array(nonzero[0])
+                nonzerox = np.array(nonzero[1])
+                # Define a bounding box based on min/max x and y
+                L,T = np.min(nonzerox), np.min(nonzeroy)
+                R,B = np.max(nonzerox), np.max(nonzeroy)
+                veh_boxes.append(((L,T), (R,B)))
+                
+        return veh_boxes
+            
+
 ROI_Scaler = namedtuple('ROI_Scaler', [
     'scale',    # integer 2-tuple, scale image by scale[0]/scale[1]
     'ROI',
@@ -20,112 +113,22 @@ ROI_Scaler = namedtuple('ROI_Scaler', [
     'steps'
 ])
 
-
-class VehicleDetectionPipeline:
+class VehicleRecognizer:
     '''
+    callable(image) --> candidate vehicle boxes
     '''
-    def __init__(self, camera_cal, veh_detector):
+    def __init__(self, ftr_extractor, ftr_scaler, veh_clf):
         '''
+        ftr_extractor: instance of VehicleFeatureExtractor
+        ftr_scaler: trained sklearn feature scaler (i.e. StandardScaler)
+        veh_clf: trained sklearn classifier
         '''
-        self._camera_cal = camera_cal
-        self._veh_detector = veh_detector
-        self._match_deque = deque(maxlen=4)
-        
-    def __call__(self, raw_rgb):
-        '''
-        Vehicle detection pipeline. Input raw RGB image from camera.
-        '''
-        # undistort raw camera image
-        rgb = self._camera_cal.undistort_image(raw_rgb)
-
-        # find vehicle match tiles
-        veh_matches = self._veh_detector.match_vehicles(rgb)
-        
-        # add image results (matching tiles) to history
-        self._match_deque.append(veh_matches)
-        
-        # make copy of image for drawing overlay graphics & annotations
-        result = np.copy(rgb)
-        
-        # if we have enough history to start tracking...
-        if len(self._match_deque) == self._match_deque.maxlen:
-            # locate vehicle bounding boxes from past few images
-            veh_boxes = self._locate_vehicles(self._match_deque, rgb.shape, threshold=3)
-            # draw bounding boxes on the image
-            self._draw_vehicle_boxes(result, veh_boxes)
-            
-        return result
-        
-    def _locate_vehicles(self, matches_list, img_shape, threshold):
-        '''
-        '''
-        # make heat-map
-        heatmap = np.zeros(img_shape)
-        for matches in matches_list:
-            for match in matches:
-                heatmap[match[0][1]:match[1][1], match[0][0]:match[1][0]] += 1
-                
-        # threshold heat-map
-        heatmap[heatmap <= threshold] = 0
-        
-        # label objects in heat-map
-        from scipy.ndimage.measurements import label
-        labels, obj_count = label(heatmap)
-        
-        # compute object bounding boxes
-        obj_boxes = []
-        for obj_number in range(1, obj_count+1):
-            # Find pixels with each car_number label value
-            nonzero = (labels == obj_number).nonzero()
-            # Identify x and y values of those pixels
-            nonzeroy = np.array(nonzero[0])
-            nonzerox = np.array(nonzero[1])
-            # Define a bounding box based on min/max x and y
-            L,T = np.min(nonzerox), np.min(nonzeroy)
-            R,B = np.max(nonzerox), np.max(nonzeroy)
-            obj_boxes.append(((L,T), (R,B)))
-            
-        return obj_boxes
-        
-    def _draw_vehicle_boxes(self, img, bboxes):
-        color = (0,0,255)
-        thickness = 5
-        for box in bboxes:
-            cv2.rectangle(img, box[0], box[1], color, thickness)
-                
-            
-def convert_image(img_rgb, color_space):
-    color_space = color_space.upper()
-    if color_space == 'RGB':
-        return img_rgb
-    elif color_space == 'GRAY':
-        return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
-    elif color_space == 'HSV':
-        return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HSV)
-    elif color_space == 'LUV':
-        return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2LUV)
-    elif color_space == 'HLS':
-        return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HLS)
-    elif color_space == 'YUV':
-        return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2YUV)
-    elif color_space == 'YCRCB':
-        return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2YCrCb)
-    else:
-        return None
-        
-
-class VehicleDetector:
-    '''
-    '''
-    def __init__(self, feature_extractor, feature_scaler, veh_clf):
-        '''
-        '''
-        self._feature_extractor = feature_extractor
-        self._feature_scaler = feature_scaler
+        self._ftr_extractor = ftr_extractor
+        self._ftr_scaler = ftr_scaler
         self._veh_clf = veh_clf
         self._ROI_scalers = self._make_ROI_scalers()
         
-    def match_vehicles(self, rgb):
+    def __call__(self, rgb):
         '''
         '''
         matches = []
@@ -145,15 +148,15 @@ class VehicleDetector:
                 interp = cv2.INTER_AREA if a < b else cv2.INTER_LINEAR
                 scaled_ROI = cv2.resize(scaled_ROI, (sR-sL, sB-sT), interpolation=interp)
             # initialize extractor with full scaled ROI...
-            self._feature_extractor.set_full_image(scaled_ROI)
+            self._ftr_extractor.set_full_image(scaled_ROI)
             for i in range(ROI_scaler.steps[0]):
                 for j in range(ROI_scaler.steps[1]):
                     # ...extract features for each 64x64 sliding tile...
                     x = ROI_scaler.offs[0] + 16*i
                     y = ROI_scaler.offs[1] + 16*j
-                    ftrs = self._feature_extractor.extract_tile_features((x,y))
+                    ftrs = self._ftr_extractor.extract_tile_features((x,y))
                     # normalize features
-                    ftrs = self._feature_scaler.transform(np.array(ftrs).reshape(1,-1))
+                    ftrs = self._ftr_scaler.transform(np.array(ftrs).reshape(1,-1))
                     # predict whether or not the tile contains a vehicle
                     if self._veh_clf.predict(ftrs) == 1:
                         # vehicle --> record unscaled tile rectangle
@@ -166,21 +169,21 @@ class VehicleDetector:
         '''
         '''
         return [
-            # self._make_ROI_scaler((4,1),  ((0,400), (1280,420))),
-            self._make_ROI_scaler((8,3), ((340,416), (940,440))), # tile = 24
-            self._make_ROI_scaler((2,1), ((300,412), (980,444))),  # tile =  32, step =  4
-            self._make_ROI_scaler((4,3), ((260,408), (1020,456))),  # tile =  48, step =  6
-            self._make_ROI_scaler((1,1), ((220,404), (1060,468))),  # tile =  64, step =  8
-            self._make_ROI_scaler((4,5), ((0,400), (1280,480))),  # tile =  80, step = 10
-            self._make_ROI_scaler((2,3), ((0,396), (1280,492))),  # tile =  96, step = 12
+            # self._make_ROI_scaler((4,1),  ((416,404), (864,436))),  # tile = 16
+            # self._make_ROI_scaler((8,3), ((340,416), (940,440))), # tile = 24
+            self._make_ROI_scaler((2,1), ((288,402), (992,450))),  # tile =  32, step =  4
+            self._make_ROI_scaler((4,3), ((232,397), (1048,469))),  # tile =  48, step =  6
+            self._make_ROI_scaler((1,1), ((160,392), (1120,488))),  # tile =  64, step =  8
+            self._make_ROI_scaler((4,5), ((120,387), (1160,507))),  # tile =  80, step = 10
+            self._make_ROI_scaler((2,3), ((80,382), (1200,526))),  # tile =  96, step = 12
             # self._make_ROI_scaler((4,7),  ((0,400), (1280,540))),  # tile = 112, step = 14
-            self._make_ROI_scaler((1,2), ((0,388), (1280,516))),  # tile = 128, step = 16
-            self._make_ROI_scaler((2,5), ((0,380), (1280,540))),   # tile = 160
-            self._make_ROI_scaler((1,3), ((0,372), (1280,564))),   # tile = 192
-            self._make_ROI_scaler((2,7), ((0,364), (1280,588))),   # tile = 224
-            self._make_ROI_scaler((1,4), ((0,356), (1280,612))),   # tile = 256
-            self._make_ROI_scaler((2,9), ((0,348), (1280,636))),    # tile = 288
-            self._make_ROI_scaler((1,5), ((0,340), (1280,660)))    # tile = 320
+            self._make_ROI_scaler((1,2), ((0,372), (1280,564))),  # tile = 128, step = 16
+            self._make_ROI_scaler((2,5), ((0,362), (1280,602))),   # tile = 160
+            self._make_ROI_scaler((1,3), ((0,352), (1280,640)))   # tile = 192
+            # self._make_ROI_scaler((2,7), ((0,342), (1280,678))),   # tile = 224
+            # self._make_ROI_scaler((1,4), ((0,332), (1280,716))),   # tile = 256
+            # self._make_ROI_scaler((2,9), ((0,322), (1280,754))),    # tile = 288
+            # self._make_ROI_scaler((1,5), ((0,312), (1280,792)))    # tile = 320
         ]
     
     def _make_ROI_scaler(self, scale, ROI):
@@ -223,7 +226,15 @@ HogFeatureParams = namedtuple('HogFeatureParams', [
 ])
 
 class VehicleFeatureExtractor:
+    '''
+    parameterized image-based feature extractor for vehicle recognition
+    '''
     def __init__(self, spatial_params=None, hist_params=None, hog_params=None):
+        '''
+        spatial_params: instance of ColorSpatialParams
+        hist_params: instance of ColorHistParams
+        hog_params: instance of HogFeatureParams
+        '''
         self._spatial_params = spatial_params
         self._hist_params = hist_params
         self._hog_params = hog_params
@@ -245,10 +256,10 @@ class VehicleFeatureExtractor:
         self._src_hog = None
         
         if self._spatial_params:
-            self._src_spat = convert_image(rgb, self._spatial_params.color_space)
+            self._src_spat = self._convert_image(rgb, self._spatial_params.color_space)
             
         if self._hist_params:
-            self._src_hist = convert_image(rgb, self._hist_params.color_space)
+            self._src_hist = self._convert_image(rgb, self._hist_params.color_space)
             
         if self._hog_params:
             self._src_hog = self._compute_hog_array(rgb)
@@ -346,7 +357,7 @@ class VehicleFeatureExtractor:
             feature_vector=False)
     
     def _compute_hog_array(self, rgb):
-        hog_img = convert_image(rgb, self._hog_params.color_space)
+        hog_img = self._convert_image(rgb, self._hog_params.color_space)
         num_orient = self._hog_params.num_orient
         cell_size = self._hog_params.cell_size
         block_size = self._hog_params.block_size
@@ -361,9 +372,34 @@ class VehicleFeatureExtractor:
             hog3 = self._compute_hog_channel(hog_img[:,:,2], num_orient, cell_size, block_size)
             return (hog1, hog2, hog3)
                 
+    def _convert_image(self, img_rgb, color_space):
+        color_space = color_space.upper()
+        if color_space == 'RGB':
+            return img_rgb
+        elif color_space == 'GRAY':
+            return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+        elif color_space == 'HSV':
+            return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HSV)
+        elif color_space == 'LUV':
+            return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2LUV)
+        elif color_space == 'HLS':
+            return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HLS)
+        elif color_space == 'YUV':
+            return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2YUV)
+        elif color_space == 'YCRCB':
+            return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2YCrCb)
+        else:
+            return None
+        
 
 def load_clf_training_data(ftr_extractor, test_size=0.3):
     '''
+    Setup for training a vehicle recognition classifier:
+     1. load training-set images
+     2. extract features from images (via ftr_extractor), create labels
+     3. train feature scaler and scale features
+     4. split features & labels into training & test sets
+     5. return feature scaler & training/test sets
     '''
     car_paths = [
         '../veh-det-training-data/vehicles/KITTI_extracted/*.png',
@@ -419,6 +455,10 @@ def save_trained_classifier(
     spatial_params, hist_params, hog_params, 
     ftr_scaler, veh_clf):
     '''
+    Save to file everything needed to instantiate & use VehicleRecognizer:
+     -feature extraction parameters
+     -trained feature scaler
+     -trained classifier
     '''
     clf_data = {}
     clf_data['spatial_params'] = pickle.dumps(spatial_params)
@@ -433,6 +473,10 @@ def save_trained_classifier(
     
 def load_trained_classifier(file_path):
     '''
+    Load from file everything needed to instantiate & use VehicleRecognizer:
+     -feature extraction parameters
+     -trained feature scaler
+     -trained classifier
     '''
     clf_data = {}
     with open(file_path, 'rb') as f:
