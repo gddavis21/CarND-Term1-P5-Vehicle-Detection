@@ -46,43 +46,112 @@ from sklearn.model_selection import train_test_split
         # thickness = 5
         # for box in bboxes:
             # cv2.rectangle(img, box[0], box[1], color, thickness)
-                
+            
+            
+def draw_vehicle_match(rgb, match):
+
+    # unpack match data
+    box, score = match[0], match[1]
+
+    # draw color-coded match box
+    if score < 0.2:
+        box_color = (255,0,0)   # red
+    elif score < 0.4:
+        box_color = (255,255,0) # yellow
+    elif score < 0.6:
+        box_color = (0,255,0)   # green
+    else:
+        box_color = (0,0,255)   # blue
+
+    cv2.rectangle(rgb, box[0], box[1], box_color, thickness=2)
+
+    # # draw match score centered in box
+    # text = '%.2f' % score
+    # font_face = cv2.FONT_HERSHEY_SIMPLEX
+    # font_scale = 0.5
+    # text_color = (255,0,255)
+    # text_thickness = 1
+    # text_size, baseline = cv2.getTextSize(
+        # text, 
+        # font_face, 
+        # font_scale, 
+        # text_thickness)
+        
+    # text_L = ((box[0][0] + box[1][0]) // 2) - (text_size[0] // 2)
+    # text_T = ((box[0][1] + box[1][1]) // 2) - (text_size[1] // 2)
+        
+    # cv2.putText(
+        # rgb,
+        # text,
+        # (text_L, text_T),
+        # font_face,
+        # font_scale,
+        # text_color,
+        # text_thickness,
+        # lineType=cv2.LINE_AA)
+
             
 
 class VehicleDetector:
     '''
     '''
-    def __init__(self, frame_size, match_vehicles, history_depth, heat_thresh):
+    def __init__(self, match_vehicles, history_depth, heat_thresh, diagnostics=False):
         '''
-        frame_size: (width,height) tuple
         match_vehicles: function(image) --> vehicle candidate boxes
         history_depth: number of consecutive frames to accumulate
         heat_thresh: heatmap threshold for object detection
         '''
-        self._frame_size = frame_size
         self._match_vehicles = match_vehicles
-        self._match_history = deque(maxlen=history_depth)
+        self._heat_history = deque(maxlen=history_depth)
         self._heat_thresh = heat_thresh
+        self._diagnostics = diagnostics
+        self._img_count = 0
         
     def __call__(self, rgb):
         '''
         function(image) --> bounding boxes of detected vehicles
         '''
+        self._img_count += 1
+
+        # find vehicle candidates and add to history
+        self._recognize_vehicles_in_frame(rgb)
+        
+        # combine info from past few frames (history) to detect vehicle objects
+        return self._locate_vehicles(rgb)
+        
+    def _recognize_vehicles_in_frame(self, rgb):
+        '''
+        '''
         # find vehicle candidates and add to history
         veh_matches = self._match_vehicles(rgb)
-        self._match_history.append(veh_matches)
-
-        # combine info from past few frames (history) to detect vehicle objects
+        heatmap = np.zeros_like(rgb[:,:,0]).astype(np.float)
+        for box,score in veh_matches:
+            heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += score
+        self._heat_history.append(heatmap)
+        
+        if self._diagnostics == True:
+            # save recognition image
+            recog_img = np.copy(rgb)
+            for match in veh_matches:
+                draw_vehicle_match(recog_img, match)
+            recog_path = './diagnostics/recog%d.png' % self._img_count
+            cv2.imwrite(recog_path, cv2.cvtColor(recog_img, cv2.COLOR_RGB2BGR))
+            # save heatmap image
+            heat_img = np.clip(heatmap, 0, 255).astype(np.uint8)
+            heat_img = cv2.merge((heat_img, heat_img, heat_img))
+            heat_path = './diagnostics/heat%d.png' % self._img_count
+            cv2.imwrite(heat_path, heat_img)
+            
+    def _locate_vehicles(self, rgb):
+        '''
+        '''
         veh_boxes = []
         
         # detect nothing until we have enough history
-        if len(self._match_history) == self._match_history.maxlen:
+        if len(self._heat_history) == self._heat_history.maxlen:
             
-            # make heat-map from history of candidates
-            heatmap = np.zeros((self._frame_size[1], self._frame_size[0]))
-            for matches in self._match_history:
-                for match in matches:
-                    heatmap[match[0][1]:match[1][1], match[0][0]:match[1][0]] += 1
+            # make combined heat-map from history of candidates
+            heatmap = np.sum(self._heat_history, axis=0)
                     
             # threshold heat-map
             heatmap[heatmap <= self._heat_thresh] = 0
@@ -103,6 +172,17 @@ class VehicleDetector:
                 R,B = np.max(nonzerox), np.max(nonzeroy)
                 veh_boxes.append(((L,T), (R,B)))
                 
+            if self._diagnostics == True:
+                # save labels image
+                labels_path = './diagnostics/labels%d.png' % self._img_count
+                cv2.imwrite(labels_path, labels)
+                # save detection image
+                detect_img = np.copy(rgb)
+                for box in veh_boxes:
+                    cv2.rectangle(detect_img, box[0], box[1], (0,0,255), 5)
+                detect_path = './diagnostics/detect%d.png' % self._img_count
+                cv2.imwrite(detect_path, cv2.cvtColor(detect_img, cv2.COLOR_RGB2BGR))
+                
         return veh_boxes
             
 
@@ -115,7 +195,7 @@ ROI_Scaler = namedtuple('ROI_Scaler', [
 
 class VehicleRecognizer:
     '''
-    callable(image) --> candidate vehicle boxes
+    callable(image) --> list of (box,score) tuples
     '''
     def __init__(self, ftr_extractor, ftr_scaler, veh_clf):
         '''
@@ -162,7 +242,8 @@ class VehicleRecognizer:
                         # vehicle --> record unscaled tile rectangle
                         mL, mR = (x*b//a)+L, ((x+64)*b//a)+L
                         mT, mB = (y*b//a)+T, ((y+64)*b//a)+T
-                        matches.append(((mL, mT), (mR, mB)))
+                        score = self._veh_clf.decision_function(ftrs)
+                        matches.append((((mL, mT), (mR, mB)), score))
         return matches
     
     def _make_ROI_scalers(self):
@@ -171,15 +252,15 @@ class VehicleRecognizer:
         return [
             # self._make_ROI_scaler((4,1),  ((416,404), (864,436))),  # tile = 16
             # self._make_ROI_scaler((8,3), ((340,416), (940,440))), # tile = 24
-            self._make_ROI_scaler((2,1), ((288,402), (992,450))),  # tile =  32, step =  4
-            self._make_ROI_scaler((4,3), ((232,397), (1048,469))),  # tile =  48, step =  6
+            # self._make_ROI_scaler((2,1), ((288,402), (992,450))),  # tile =  32, step =  4
+            # self._make_ROI_scaler((4,3), ((232,397), (1048,469))),  # tile =  48, step =  6
             self._make_ROI_scaler((1,1), ((160,392), (1120,488))),  # tile =  64, step =  8
-            self._make_ROI_scaler((4,5), ((120,387), (1160,507))),  # tile =  80, step = 10
+            # self._make_ROI_scaler((4,5), ((120,387), (1160,507))),  # tile =  80, step = 10
             self._make_ROI_scaler((2,3), ((80,382), (1200,526))),  # tile =  96, step = 12
             # self._make_ROI_scaler((4,7),  ((0,400), (1280,540))),  # tile = 112, step = 14
-            self._make_ROI_scaler((1,2), ((0,372), (1280,564))),  # tile = 128, step = 16
-            self._make_ROI_scaler((2,5), ((0,362), (1280,602))),   # tile = 160
-            self._make_ROI_scaler((1,3), ((0,352), (1280,640)))   # tile = 192
+            self._make_ROI_scaler((1,2), ((0,372), (1280,564)))  # tile = 128, step = 16
+            # self._make_ROI_scaler((2,5), ((0,362), (1280,602))),   # tile = 160
+            # self._make_ROI_scaler((1,3), ((0,352), (1280,640)))   # tile = 192
             # self._make_ROI_scaler((2,7), ((0,342), (1280,678))),   # tile = 224
             # self._make_ROI_scaler((1,4), ((0,332), (1280,716))),   # tile = 256
             # self._make_ROI_scaler((2,9), ((0,322), (1280,754))),    # tile = 288
@@ -411,7 +492,8 @@ def load_clf_training_data(ftr_extractor, test_size=0.3):
 
     notcar_paths = [
         '../veh-det-training-data/non-vehicles/Extras/*.png',
-        '../veh-det-training-data/non-vehicles/GTI/*.png'
+        '../veh-det-training-data/non-vehicles/GTI/*.png',
+        '../veh-det-training-data/hard-negs/hardneg*.png'
     ]
 
     # extract features from training images

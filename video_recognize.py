@@ -10,12 +10,9 @@ import vehicles as veh
 from moviepy.editor import VideoFileClip
 
 # constants & script arguments
-frame_size = (1280,720)
 in_file = sys.argv[1]
 out_file = sys.argv[2]
 clf_file = sys.argv[3]
-detector_history_depth = int(sys.argv[4])
-detector_heat_thresh = np.float(sys.argv[5])
 
 # calibrate camera from checkerboard images
 def calibration_progress(msg):
@@ -43,21 +40,16 @@ match_vehicles = veh.VehicleRecognizer(
     ftr_scaler, 
     veh_clf)
     
-detect_vehicles = veh.VehicleDetector(
-    match_vehicles, 
-    history_depth=detector_history_depth, 
-    heat_thresh=detector_heat_thresh)
-    
 def process_image(raw_rgb):
     '''
-    Vehicle detection pipeline. Input raw RGB images from camera.
+    Vehicle recognition pipeline. Input raw RGB images from camera.
     '''
     # undistort raw image from camera
     rgb = camera_cal.undistort_image(raw_rgb)
     
     # draw vehicle bounding boxes on the image
-    for box in detect_vehicles(rgb):
-        cv2.rectangle(rgb, box[0], box[1], (0,0,255), 5)
+    for match in match_vehicles(rgb):
+        veh.draw_vehicle_match(rgb, match)
         
     return rgb
     
