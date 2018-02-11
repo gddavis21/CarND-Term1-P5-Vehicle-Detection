@@ -19,6 +19,7 @@ The goals / steps of this project are the following:
 [img_vis_hog]: ./output_images/vis-HOG.png
 [img_vis_spatial]: ./output_images/vis-spatial.png
 [img_vis_hist]: ./output_images/vis-hist.png
+[img_search_bands]: ./output_images/search_bands_plot.png
 [video1]: ./project_video.mp4
 
 ## Code Overview
@@ -153,7 +154,7 @@ NOTE: Factoring the classifier training implementation into the module functions
 
 #### 1. Describe how (and identify where in your code) you implemented a sliding window search.  How did you decide what scales to search and how much to overlap windows?
 
-Class `vehicles.VehicleRecognizer` performs a sliding window search for vehicle matches on user-supplied images.
+Class `vehicles.VehicleRecognizer` (vehicles.py TODO) performs a sliding window search for vehicle matches on user-supplied images.
   * `VehicleRecognizer` is constructed with the following user-defined arguments:
     - `VehicleFeatureExtractor` instance
     - trained sklearn feature scaler (`StandardScaler`)
@@ -168,12 +169,19 @@ Class `vehicles.VehicleRecognizer` performs a sliding window search for vehicle 
       + step a 64x64 window across and down the resized ROI (step-size is defined as 16 pixels)
       + at each step, extract 64x64 tile (same size as training images)
         * call `VehicleFeatureExtractor.extract_tile_features()` to extract tile image features
-        * call classifier `predict()` method to classify the tile `vehicle` or `not-vehicle`
-        * vehicle match --> record tile box & match-strength score (from classifier `decision_function()` method)
+        * use `clf.predict()` method to classify the tile as `vehicle` or `not-vehicle`
+        * vehicle --> record tile box & match-strength score (calculated by `clf.decision_function()` method)
     - report list of vehicle-match boxes and corresponding match-strength scores
   * VehicleFeatureExtractor `set_full_image()` and `extract_tile_features()` methods implement a caching scheme that minimizes image resizing and HOG feature extraction (by extracting HOG features once for each scaled ROI and sub-sampling on demand). This design is also critical to run-time performance.
       
-![alt text][image3]
+Here's the procedure I used to calibrated the window-specific ROI's: 
+  * Extracted several images from the project video.
+  * Recorded tight bounding-box sizes and positions for the vehicles in these images.
+  * Plotted bounding-box size vs. bounding-box top & bottom positions (see below).
+  * The plot shows a simple linear relationship between window size and vertical image position where vehicles of that size would be located.
+  * From the plot curves I estimated vertical ROI positions for a set of pre-defined window sizes, also enlarging the ROI's enough to allow for the window to slide up and down by 1 step from the center position.
+  
+![Window-specific search bands][img_search_bands]
 
 #### 2. Show some examples of test images to demonstrate how your pipeline is working.  What did you do to optimize the performance of your classifier?
 
