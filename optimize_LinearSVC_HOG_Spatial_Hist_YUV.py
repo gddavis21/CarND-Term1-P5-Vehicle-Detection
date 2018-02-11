@@ -1,4 +1,4 @@
-import sys
+
 import numpy as np
 import vehicles as veh
 
@@ -22,11 +22,5 @@ hog_params = veh.HogFeatureParams(
 # create feature extractor    
 ftr_extractor = veh.VehicleFeatureExtractor(spatial_params, hist_params, hog_params)
 
-# train feature scaler & LinearSVC classifier
-print('training classifier...')
-ftr_scaler, clf = veh.train_LinearSVC(ftr_extractor, test_size=0.2, svc_C=0.01)
-    
-# save classifier data
-print('saving classifier data to file...')
-file_path = sys.argv[1]
-veh.save_classifier(file_path, spatial_params, hist_params, hog_params, ftr_scaler, clf)
+# use grid-search to find (near) optimal regularization parameter
+veh.optimize_LinearSVC(ftr_extractor, svc_C_values=np.logspace(-5, 3, 9))
