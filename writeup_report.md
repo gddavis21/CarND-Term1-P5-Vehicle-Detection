@@ -25,56 +25,56 @@ The goals / steps of this project are the following:
 
 My implementation for this project consists of a Python module (vehicles.py) of classes and utility functions that make up the core functionality, and several scripts that leverage this module to implement the various tasks required for the project.
 
-* Module vehicles.py
-  + class VehicleFeatureExtractor (vehicles.py TODO)
+* Module `vehicles.py`
+  + class `VehicleFeatureExtractor` (vehicles.py TODO)
     - implements image-based feature extraction for use with image classifier
     - supports any combination of Histogram of Oriented Gradients (HOG) features, binned color features, and color histogram features
-  + function load_training_data() (vehicles.py TODO)
+  + function `load_training_data()` (vehicles.py TODO)
     - loads vehicle & non-vehicle training images from disk
-    - extracts image features & labels (using VehicleFeatureExtractor)
-  + function train_LinearSVC() (vehicles.py TODO)
+    - extracts image features & labels (using `VehicleFeatureExtractor`)
+  + function `train_LinearSVC()` (vehicles.py TODO)
     - fits feature normalization "scaler" to extracted training features
     - splits training data into training/test sets
-    - trains LinearSVC classifier
-  + function optimize_LinearSVC() (vehicles.py TODO)
+    - trains linear SVM classifier
+  + function `optimize_LinearSVC()` (vehicles.py TODO)
     - fits feature normalization "scaler" to extracted training features
     - splits training data into training/test sets
-    - cross-validates precision/recall metrics over range of LinearSVC parameter values
-  + function save_classifier() (vehicles.py TODO)
+    - cross-validates precision/recall metrics over range of SVM parameter values
+  + function `save_classifier()` (vehicles.py TODO)
     - saves feature-extraction parameters, trained feature scaler & trained classifier to pickle file
     - enables efficient re-use of trained classifier
-  + function load_classifier() (vehicles.py TODO)
+  + function `load_classifier()` (vehicles.py TODO)
     - loads previously saved feature-extraction parameters, trained feature scaler & trained classifier from pickle file
     - enables efficient re-use of trained classifier
-  + class VehicleRecognizer (vehicles.py TODO)
-    - uses supplied feature extractor, trained feature scaler and trained image classifier
-    - search given image(s) for vehicle "matches"
+  + class `VehicleRecognizer` (vehicles.py TODO)
+    - uses supplied `VehicleFeatureExtractor`, trained feature scaler and trained image classifier
+    - performs sliding-window search on given image(s) for vehicle "matches"
     - for each image, returns vehicle-match bounding boxes & corresponding match-strength scores
-  + class VehicleDetector (vehicles.py TODO)
+  + class `VehicleDetector` (vehicles.py TODO)
     - track vehicles in a time series of images (video stream) 
-    - uses supplied VehicleRecognizer to identify candidate vehicle matches
+    - uses supplied `VehicleRecognizer` to identify candidate vehicle matches
     - implements additional false positive filtering
     - for each image, returns bounding boxes of tracked vehicles
-* Module vision.py
-  + class CameraCal (vision.py TODO)
+* Module `vision.py`
+  + class `CameraCal` (vision.py TODO)
     - computes camera calibration from checkerboard images
     - applies calibration to undistort given image(s)
     - this class was integrated from the previous project
 * Scripts
-  + train_LinearSVC_HOG_Spatial_Hist_YUV.py
+  + `train_LinearSVC_HOG_Spatial_Hist_YUV.py`
     - train & save LinearSVC classifier & feature scaler, along with corresponding feature extraction parameters
     - encodes feature extraction parameters selected for best performance
-  + optimize_LinearSVC_HOG_Spatial_Hist_YUV.py
+  + `optimize_LinearSVC_HOG_Spatial_Hist_YUV.py`
     - estimate LinearSVC classifier performance across a range of regularization parameter values
     - uses feature extraction parameters selected for best performance
-  + recognition_images.py
+  + `recognition_images.py`
     - applies vehicle recognition algorithm (VehicleRecognizer) to 1 or more given images
     - draws recognition result overlay graphics and saves annotated images
-  + recognition_video.py
+  + `recognition_video.py`
     - applies vehicle recognition algorithm (VehicleRecognizer) to each frame in video stream
     - draws recognition overlay graphics on each frame
     - saves result video with vehicle recognition graphics
-  + detection_video.py
+  + `detection_video.py`
     - applies vehicle detection/tracking algorithm (VehicleDetector) to each frame in video stream
     - draws detection overlay graphics on each frame
     - saves result video with vehicle detection graphics
@@ -106,15 +106,15 @@ I started by reading in all the `vehicle` and `non-vehicle` images.  Here is an 
 
 I then explored different color spaces and different `skimage.hog()` parameters (`orientations`, `pixels_per_cell`, and `cells_per_block`).  I grabbed random images from each of the two classes and displayed them to get a feel for what the `skimage.hog()` output looks like.
 
-Here is an example of `vehicle` and `non-vehicle` HOG features using the `YUV` color space and HOG parameters of `orientations=11`, `pixels_per_cell=(8, 8)` and `cells_per_block=(2, 2)`:
+Here is an example of `vehicle` and `non-vehicle` HOG features using `YUV` color and HOG parameters of `orientations=11`, `pixels_per_cell=(8, 8)` and `cells_per_block=(2, 2)`:
 
 ![Visualize HOG features][img_vis_hog]
 
-Here is an example of `vehicle` and `non-vehicle` binned spatial features using the `YUV` color space and binning to a 16x16 array:
+Here is an example of `vehicle` and `non-vehicle` binned spatial features using `YUV` color and binned to 16x16 array:
 
 ![Visualize binned spatial features][img_vis_spatial]
 
-Here is an example of `vehicle` and `non-vehicle` color histogram features using the `YUV` color space and 16 bins for each channel:
+Here is an example of `vehicle` and `non-vehicle` color histogram features using `YUV` color and 16 bins per channel:
 
 ![Visualize color histogram features][img_vis_hist]
 
@@ -122,28 +122,28 @@ Here is an example of `vehicle` and `non-vehicle` color histogram features using
 
 I tried various combinations of color-space and `skimage.hog()` parameters for extracting HOG features:
   * color spaces: RGB, HSV and YUV
-  * orientations: 8,9,11,12
-  * cell size 8
-  * block sizes 2,3
+  * orientations: 8, 9, 11, 12
+  * cell size 8x8
+  * block sizes 2x2, 3x3
   
 For each of these combinations I trained a classifier and computed precision & recall metrics against the test set. I also tested the trained classifiers on a series of images extracted from the project video, annotating the images with vehicle match boxes. This was a good demonstration of classifier performance, both in terms of identifying vehicles as well as avoiding false positives.
 
-The main HOG parameter that affected classifier performance was the choice of color space. I found that RGB performed poorly, HSV a little better, and YUV best. I noticed minor performance variations from varying cell-size, block-size and number of orientations. In th end I chose YUV color with cell-size = 8, block-size = 2 and orientations = 11.
+The main HOG parameter that affected classifier performance was the choice of color space. I found that `RGB` performed poorly, `HSV` a little better, and `YUV` best. I noticed minor performance variations from varying cell-size, block-size and number of orientations. In the end I chose `YUV` color with cell-size = 8x3, block-size = 2x2 and orientations = 11.
 
 #### 3. Describe how (and identify where in your code) you trained a classifier using your selected HOG features (and color features if you used them).
 
 My code for training a linear SVM classifier consists of the following:
-  * script train_LinearSVC_HOG_Spatial_Hist_YUV.py
+  * script `train_LinearSVC_HOG_Spatial_Hist_YUV.py`
     - configures HOG, spatial and histogram feature extraction parameters
-    - creates VehicleFeatureExtractor instance
-    - calls vehicles.train_LinearSVC() to train the classifier (see below)
-    - calls vehicles.save_classifier() to save the trained classifier to a file (see below)
-  * function vehicles.train_LinearSVC() (vehicles.py TODO)
-    - calls vehicles.load_training_data() (vehicles.py TODO) to load training images and extract features & labels
-    - fits an sklearn.StandardScaler to the feature data and normalizes the features
-    - calls sklearn.train_test_split() to randomly split training data into training & test sets
-    - fits an sklearn.LinearSVC classifier to the training set
-  * function vehicles.save_classifier() (vehicles.py TODO)
+    - creates `VehicleFeatureExtractor` instance
+    - calls `vehicles.train_LinearSVC()` to train the classifier (see below)
+    - calls `vehicles.save_classifier()` to save the trained classifier to a file (see below)
+  * function `vehicles.train_LinearSVC()` (vehicles.py TODO)
+    - calls `vehicles.load_training_data()` (vehicles.py TODO) to load training images and extract features & labels
+    - fits an `sklearn.StandardScaler` to the feature data and normalizes the features
+    - uses `sklearn.train_test_split()` to randomly split training data into training & test sets
+    - fits an `sklearn.LinearSVC` classifier to the training set
+  * function `vehicles.save_classifier()` (vehicles.py TODO)
     - saves feature extraction parameters, feature scaler and trained classifier to pickle file
     - enables efficient re-use of trained classifier
     
@@ -153,8 +153,26 @@ NOTE: Factoring the classifier training implementation into the module functions
 
 #### 1. Describe how (and identify where in your code) you implemented a sliding window search.  How did you decide what scales to search and how much to overlap windows?
 
-I decided to search random window positions at random scales all over the image and came up with this (ok just kidding I didn't actually ;):
-
+Class `vehicles.VehicleRecognizer` performs a sliding window search for vehicle matches on user-supplied images.
+  * `VehicleRecognizer` is constructed with the following user-defined arguments:
+    - `VehicleFeatureExtractor` instance
+    - trained sklearn feature scaler (`StandardScaler`)
+    - trained sklearn image classifier (`LinearSVC`) 
+    - list of 1 or more window sizes to use in sliding window search
+  * The class defines a region of interest (ROI) to search for each selected window size. The regions were carefully chosen to minimize search area without sacrificing recognition accuracy. This design is critical to run-time performance.
+  * The sliding window search algorithm is found in `VehicleRecognizer.__call__()` (vehicles.py TODO).
+  * Algorithm outline:
+    - for each selected window size
+      + resize the window-specific ROI by the same scale as resizing the window to 64x64
+      + call `VehicleFeatureExtractor.set_full_image()` to pre-load extractor with resized ROI
+      + step a 64x64 window across and down the resized ROI (step-size is defined as 16 pixels)
+      + at each step, extract 64x64 tile (same size as training images)
+        * call `VehicleFeatureExtractor.extract_tile_features()` to extract tile image features
+        * call classifier `predict()` method to classify the tile `vehicle` or `not-vehicle`
+        * vehicle match --> record tile box & match-strength score (from classifier `decision_function()` method)
+    - report list of vehicle-match boxes and corresponding match-strength scores
+  * VehicleFeatureExtractor `set_full_image()` and `extract_tile_features()` methods implement a caching scheme that minimizes image resizing and HOG feature extraction (by extracting HOG features once for each scaled ROI and sub-sampling on demand). This design is also critical to run-time performance.
+      
 ![alt text][image3]
 
 #### 2. Show some examples of test images to demonstrate how your pipeline is working.  What did you do to optimize the performance of your classifier?
