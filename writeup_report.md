@@ -1,8 +1,4 @@
-## Writeup Report
-
----
-
-**Vehicle Detection Project**
+## Write-up Report: Vehicle Detection Project
 
 The goals / steps of this project are the following:
 
@@ -254,12 +250,6 @@ Class `vehicles.VehicleDetector` (vehicles.py TODO) applies frame-by-frame vehic
   * assuming each labeled object corresponds to a vehicle, computes bounding box of each object
   * reports list of object/vehicle bounding boxes for each frame
   
-Using match-strength score to weight the heatmap was critical to getting good performance out of the false positives filter. 
-  * Originally I weighted all matches equally.
-  * This scheme made it very difficult to eliminate false positives without eliminating true matches.
-  * It turned out that nearly all false positives have a relative low match score, while the true vehicle matches tend to be 'covered' by multiple medium/high-score boxes.
-  * Adding up match-strength scores led to consistently good separation between false positives and true matches--critical for any threshold-based technique.
-  
 Here's an example result showing the heatmap from a series of frames of video, the result of `scipy.ndimage.measurements.label()` and the bounding boxes then overlaid on the last frame of video:
 
 ### Here are six frames and their corresponding heatmaps:
@@ -272,7 +262,12 @@ Here's an example result showing the heatmap from a series of frames of video, t
 ### Here the resulting bounding boxes are drawn onto the last frame in the series:
 ![Vehicle detection][img_vis_detect]
 
-
+Using match-strength score to weight the heatmap was critical to getting good performance out of the false positives filter. 
+  * Originally I weighted all matches equally.
+  * This scheme made it very difficult to eliminate false positives without eliminating true matches.
+  * It turned out that nearly all false positives have a relative low match score, while the true vehicle matches tend to be 'covered' by multiple medium/high-score boxes.
+  * Adding up match-strength scores led to consistently good separation between false positives and true matches--critical for any threshold-based technique.
+  
 
 ---
 
