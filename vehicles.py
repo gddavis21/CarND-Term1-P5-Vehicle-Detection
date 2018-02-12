@@ -41,13 +41,13 @@ HogFeatureParams = namedtuple('HogFeatureParams', [
 
 class VehicleFeatureExtractor:
     '''
-    parameterized image-based feature extractor for vehicle recognition
+    image-based feature extractor for vehicle recognition
     '''
     def __init__(self, spatial_params=None, hist_params=None, hog_params=None):
         '''
-        spatial_params: instance of ColorSpatialParams
-        hist_params: instance of ColorHistParams
-        hog_params: instance of HogFeatureParams
+        spatial_params: instance of ColorSpatialParams (None --> no spatial features)
+        hist_params: instance of ColorHistParams (None --> no histogram features)
+        hog_params: instance of HogFeatureParams (None --> no HOG features)
         '''
         self._spatial_params = spatial_params
         self._hist_params = hist_params
@@ -82,7 +82,7 @@ class VehicleFeatureExtractor:
         if self._hog_params:
             self._hog_ftrs, self._hog_imgs = self._compute_hog_array(rgb, visualise)
     
-    def extract_tile_features(self, tile_corner, hog_vis=None, spatial_vis=None, hist_vis=None):
+    def extract_tile_features(self, tile_corner, vis_hog=None, vis_spatial=None, vis_hist=None):
         '''
         Extract features for a single image tile. 
 
@@ -95,17 +95,17 @@ class VehicleFeatureExtractor:
         vis_imgs = []
 
         if self._spatial_params:
-            features.append(self._bin_spatial(tile_corner, spatial_vis))
+            features.append(self._bin_spatial(tile_corner, vis_spatial))
 
         if self._hist_params:
-            features.append(self._color_histogram(tile_corner, hist_vis))
+            features.append(self._color_histogram(tile_corner, vis_hist))
         
         if self._hog_params:
-            features.append(self._hog_features(tile_corner, hog_vis))
+            features.append(self._hog_features(tile_corner, vis_hog))
         
         return np.concatenate(features)
         
-    def extract_image_features(self, rgb, hog_vis=None, spatial_vis=None, hist_vis=None):
+    def extract_image_features(self, rgb, vis_hog=None, vis_spatial=None, vis_hist=None):
         '''
         Extract features for an entire image. 
         
@@ -120,17 +120,24 @@ class VehicleFeatureExtractor:
             interp = cv2.INTER_AREA if rgb.shape[0] > 64 else cv2.INTER_LINEAR
             src_img = cv2.resize(rgb, (64,64), interpolation=interp)
         
-        self.set_full_image(src_img, hog_vis != None)
-        return self.extract_tile_features((0,0), hog_vis, spatial_vis, hist_vis)
+        self.set_full_image(src_img, vis_hog != None)
+        return self.extract_tile_features((0,0), vis_hog, vis_spatial, vis_hist)
 
-    def _bin_spatial(self, tile_corner, spatial_vis=None):
+    def _bin_spatial(self, tile_corner, vis_spatial=None):
+        ''' compute binned spatial feature vector '''
+        # sub-sample cached spatial image 
         L,T = tile_corner[0], tile_corner[1]
         R,B = L+64, T+64
         tile = self._spatial_img[T:B,L:R]
+        # resize to desired size, bin each channel separately 
         size = self._spatial_params.image_size
         interp = cv2.INTER_AREA if size < 64 else cv2.INTER_LINEAR
         binned = cv2.resize(tile, (size,size), interpolation=interp)
-        if spatial_vis:
+        if vis_spatial:
+            # user-requested visualization:
+            #  - 2x2 plot
+            #  - original tile/image
+            #  - binned color map for each channel (3)
             fig, axes = plt.subplots(2,2)
             axes[0][0].imshow(self._src_rgb[T:B,L:R])
             axes[0][0].set_title('Image')
@@ -141,14 +148,16 @@ class VehicleFeatureExtractor:
             axes[1][1].imshow(binned[:,:,2], cmap='gray')
             axes[1][1].set_title('Ch3 Spatial')
             fig.tight_layout()
-            spatial_vis(fig)
+            vis_spatial(fig)
         return binned.ravel()
         
-    def _color_histogram(self, tile_corner, hist_vis=None):
-        # compute separate histograms for each channel
+    def _color_histogram(self, tile_corner, vis_hist=None):
+        ''' compute color histogram feature vector '''
+        # sub-sample cached histogram image 
         L,T = tile_corner[0], tile_corner[1]
         R,B = L+64, T+64
         tile = self._hist_img[T:B,L:R]
+        # compute separate histograms for each channel 
         hp = self._hist_params
         bins1, range1 = hp.bins_ch1, hp.range_ch1
         bins2, range2 = hp.bins_ch2, hp.range_ch2
@@ -156,7 +165,11 @@ class VehicleFeatureExtractor:
         hist_ch1 = np.histogram(tile[:,:,0], bins=bins1, range=range1)
         hist_ch2 = np.histogram(tile[:,:,1], bins=bins2, range=range2)
         hist_ch3 = np.histogram(tile[:,:,2], bins=bins3, range=range3)
-        if hist_vis:
+        if vis_hist:
+            # user-requested visualization:
+            #  - 2x2 plot
+            #  - original tile/image
+            #  - histogram for each channel (3)
             fig, axes = plt.subplots(2,2)
             axes[0][0].imshow(self._src_rgb[T:B,L:R])
             axes[0][0].set_title('Image')
@@ -176,42 +189,58 @@ class VehicleFeatureExtractor:
             axes[1][1].set_xlim(range3[0], range3[1]+1)
             axes[1][1].set_title('Ch3 Histogram')
             fig.tight_layout()
-            hist_vis(fig)
+            vis_hist(fig)
         # concatenate histograms into a single feature vector
         return np.concatenate((hist_ch1[0], hist_ch2[0], hist_ch3[0]))
         
-    def _hog_features(self, tile_corner, hog_vis=None):
-        if hog_vis:
+    def _hog_features(self, tile_corner, vis_hog=None):
+        ''' compute HOG descriptor feature vector '''
+        if vis_hog:
+            # user-requested visualization
             L,T = tile_corner[0], tile_corner[1]
             R,B = L+64, T+64
-            fig, axes = plt.subplots(2,2)
-            axes[0][0].imshow(self._src_rgb[T:B,L:R])
-            axes[0][0].set_title('Image')
-            axes[0][1].imshow(self._hog_imgs[0][T:B,L:R], cmap='gray')
-            axes[0][1].set_title('Ch1 HOG')
-            axes[1][0].imshow(self._hog_imgs[1][T:B,L:R], cmap='gray')
-            axes[1][0].set_title('Ch2 HOG')
-            axes[1][1].imshow(self._hog_imgs[2][T:B,L:R], cmap='gray')
-            axes[1][1].set_title('Ch3 HOG')
-            fig.tight_layout()
-            hog_vis(fig)
-        # HOG descriptor features
+            if len(self._hog_ftrs) == 1:
+                # HOG features on grayscale image
+                # 1x2 plot: original tile & single-channel HOG visualization image
+                fig, axes = plt.subplots(2,2)
+                axes[0][0].imshow(self._src_rgb[T:B,L:R])
+                axes[0][0].set_title('Image')
+                axes[0][1].imshow(self._hog_imgs[0][T:B,L:R], cmap='gray')
+                axes[0][1].set_title('HOG')
+                fig.tight_layout()
+                vis_hog(fig)
+            else:
+                # HOG features on color image
+                # 2x2 plot: original tile & HOG visualization image for each channel
+                fig, axes = plt.subplots(2,2)
+                axes[0][0].imshow(self._src_rgb[T:B,L:R])
+                axes[0][0].set_title('Image')
+                axes[0][1].imshow(self._hog_imgs[0][T:B,L:R], cmap='gray')
+                axes[0][1].set_title('Ch1 HOG')
+                axes[1][0].imshow(self._hog_imgs[1][T:B,L:R], cmap='gray')
+                axes[1][0].set_title('Ch2 HOG')
+                axes[1][1].imshow(self._hog_imgs[2][T:B,L:R], cmap='gray')
+                axes[1][1].set_title('Ch3 HOG')
+                fig.tight_layout()
+                vis_hog(fig)
+        # sub-sample cached HOG feature map
         cell_size = self._hog_params.cell_size
         block_size = self._hog_params.block_size
         blocks_per_tile = (64 // cell_size) - block_size + 1
         L,T = (tile_corner[0] // 8), (tile_corner[1] // 8)
         R,B = L+blocks_per_tile, T+blocks_per_tile
         if len(self._hog_ftrs) == 1:
-            # HOG features from grayscale image
+            # HOG features on grayscale image
             return self._hog_ftrs[0][T:B,L:R].ravel()
         else:
-            # HOG features from color image
+            # HOG features on color image
             hog_feat1 = self._hog_ftrs[0][T:B,L:R].ravel()
             hog_feat2 = self._hog_ftrs[1][T:B,L:R].ravel()
             hog_feat3 = self._hog_ftrs[2][T:B,L:R].ravel()
             return np.hstack((hog_feat1, hog_feat2, hog_feat3))
             
     def _compute_hog_channel(self, img, num_orient, cell_size, block_size, visualise=False):
+        ''' extract HOG descriptor map for a single-channel image '''
         return hog(
             img,
             orientations=num_orient,
@@ -223,6 +252,10 @@ class VehicleFeatureExtractor:
             feature_vector=False)
     
     def _compute_hog_array(self, rgb, visualise=False):
+        ''' 
+        compute HOG descriptor map(s) and HOG visualization image(s) for each channel
+        of the given source image
+        '''
         src_img = self._convert_image(rgb, self._hog_params.color_space)
         num_orient = self._hog_params.num_orient
         cell_size = self._hog_params.cell_size
@@ -246,6 +279,7 @@ class VehicleFeatureExtractor:
         return hog_ftrs, hog_imgs
                 
     def _convert_image(self, img_rgb, color_space):
+        ''' color conversion utility '''
         color_space = color_space.upper()
         if color_space == 'RGB':
             return img_rgb
@@ -450,6 +484,7 @@ TileScaler = namedtuple('TileScaler', [
     'steps'
 ])
 
+
 def draw_vehicle_match(rgb, match):
 
     # unpack match data
@@ -466,12 +501,13 @@ def draw_vehicle_match(rgb, match):
         box_color = (0,0,255)   # blue
 
     cv2.rectangle(rgb, box[0], box[1], box_color, thickness=2)
+    
 
 class VehicleRecognizer:
     '''
     callable(image) --> list of (box,score) tuples
     '''
-    def __init__(self, ftr_extractor, ftr_scaler, veh_clf):
+    def __init__(self, ftr_extractor, ftr_scaler, veh_clf, tile_sizes):
         '''
         ftr_extractor: instance of VehicleFeatureExtractor
         ftr_scaler: trained sklearn feature scaler (i.e. StandardScaler)
@@ -480,7 +516,7 @@ class VehicleRecognizer:
         self._ftr_extractor = ftr_extractor
         self._ftr_scaler = ftr_scaler
         self._veh_clf = veh_clf
-        self._tile_scalers = VehicleRecognizer._make_TileScalers([64,96,128])
+        self._tile_scalers = VehicleRecognizer._make_TileScalers(tile_sizes)
         
     def __call__(self, rgb):
         '''
@@ -530,9 +566,9 @@ class VehicleRecognizer:
             24:  VehicleRecognizer._make_TileScaler((8,3), ((340,416), ( 940,440))),
             32:  VehicleRecognizer._make_TileScaler((2,1), ((288,402), ( 992,450))),
             48:  VehicleRecognizer._make_TileScaler((4,3), ((232,397), (1048,469))),
-            64:  VehicleRecognizer._make_TileScaler((1,1), ((160,392), (1120,488))),
-            80:  VehicleRecognizer._make_TileScaler((4,5), ((120,387), (1160,507))),
-            96:  VehicleRecognizer._make_TileScaler((2,3), (( 80,382), (1200,526))),
+            64:  VehicleRecognizer._make_TileScaler((1,1), ((  0,392), (1280,488))),
+            80:  VehicleRecognizer._make_TileScaler((4,5), ((  0,387), (1280,507))),
+            96:  VehicleRecognizer._make_TileScaler((2,3), ((  0,382), (1280,526))),
             128: VehicleRecognizer._make_TileScaler((1,2), ((  0,372), (1280,564))),
             160: VehicleRecognizer._make_TileScaler((2,5), ((  0,362), (1280,602))),
             192: VehicleRecognizer._make_TileScaler((1,3), ((  0,352), (1280,640)))
@@ -540,7 +576,7 @@ class VehicleRecognizer:
         return [scalers[size] for size in tile_sizes]
     
     @staticmethod
-    def _make_TileScaler(self, scale, ROI):
+    def _make_TileScaler(scale, ROI):
         '''
         '''
         block = 64
@@ -554,10 +590,12 @@ class VehicleRecognizer:
         steps = ((sW-block) // delta + 1, (sH-block) // delta + 1)
         return TileScaler(scale=scale, ROI=ROI, offs=offs, steps=steps)
         
+        
 class VehicleDetector:
     '''
     '''
-    def __init__(self, match_vehicles, history_depth, heat_thresh, diagnostics=False):
+    def __init__(self, match_vehicles, history_depth, heat_thresh, 
+        vis_recog=None, vis_heat=None, vis_labels=None, vis_detect=None):
         '''
         match_vehicles: function(image) --> vehicle candidate boxes
         history_depth: number of consecutive frames to accumulate
@@ -566,7 +604,10 @@ class VehicleDetector:
         self._match_vehicles = match_vehicles
         self._heat_history = deque(maxlen=history_depth)
         self._heat_thresh = heat_thresh
-        self._diagnostics = diagnostics
+        self._vis_recog = vis_recog
+        self._vis_heat = vis_heat
+        self._vis_labels = vis_labels
+        self._vis_detect = vis_detect
         self._img_count = 0
         
     def __call__(self, rgb):
@@ -591,18 +632,17 @@ class VehicleDetector:
             heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += score
         self._heat_history.append(heatmap)
         
-        if self._diagnostics == True:
-            # save recognition image
+        if self._vis_recog:
+            # report recognition visualization image
             recog_img = np.copy(rgb)
             for match in veh_matches:
                 draw_vehicle_match(recog_img, match)
-            recog_path = './diagnostics/recog%d.png' % self._img_count
-            cv2.imwrite(recog_path, cv2.cvtColor(recog_img, cv2.COLOR_RGB2BGR))
-            # save heatmap image
-            heat_img = np.clip(heatmap, 0, 255).astype(np.uint8)
-            heat_img = cv2.merge((heat_img, heat_img, heat_img))
-            heat_path = './diagnostics/heat%d.png' % self._img_count
-            cv2.imwrite(heat_path, heat_img)
+            self._vis_recog(recog_img, self._img_count)
+            
+        if self._vis_heat:
+            # report heatmap visualization image
+            heat_img = np.clip(heatmap*20, 0, 255).astype(np.uint8)
+            self._vis_heat(heat_img, self._img_count)
             
     def _locate_vehicles(self, rgb):
         '''
@@ -634,15 +674,17 @@ class VehicleDetector:
                 R,B = np.max(nonzerox), np.max(nonzeroy)
                 veh_boxes.append(((L,T), (R,B)))
                 
-            if self._diagnostics == True:
-                # save labels image
-                labels_path = './diagnostics/labels%d.png' % self._img_count
-                cv2.imwrite(labels_path, labels)
-                # save detection image
+            if self._vis_labels:
+                # report object labels visualization
+                self._vis_labels(labels.astype(np.uint8), self._img_count)
+            
+            if self._vis_detect:
+                # report detected vehicles visualization
                 detect_img = np.copy(rgb)
                 for box in veh_boxes:
                     cv2.rectangle(detect_img, box[0], box[1], (0,0,255), 5)
-                detect_path = './diagnostics/detect%d.png' % self._img_count
-                cv2.imwrite(detect_path, cv2.cvtColor(detect_img, cv2.COLOR_RGB2BGR))
+                self._vis_detect(detect_img, self._img_count)
                 
         return veh_boxes
+
+        

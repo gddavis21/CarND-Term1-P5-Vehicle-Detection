@@ -20,7 +20,12 @@ The goals / steps of this project are the following:
 [img_vis_spatial]: ./output_images/vis-spatial.png
 [img_vis_hist]: ./output_images/vis-hist.png
 [img_search_bands]: ./output_images/search_bands_plot.png
-[video1]: ./project_video.mp4
+[img_sliding_windows]: ./output_images/vis-sliding-windows.png
+[img_recog_examples]: ./output_images/vis-recog-examples.png
+[img_recog_heat]: ./output_images/vis-recog-heat.png
+[img_vis_labels]: ./output_images/vis-labels.png
+[img_vis_detect]: ./output_images/vis-detect.png
+[proj_video]: ./output_videos/project_video_out.mp4
 
 ## Code Overview
 
@@ -157,37 +162,45 @@ NOTE: Factoring the classifier training implementation into the module functions
 Class `vehicles.VehicleRecognizer` (vehicles.py TODO) performs a sliding window search for vehicle matches on user-supplied images.
   * `VehicleRecognizer` is constructed with the following user-defined arguments:
     - `VehicleFeatureExtractor` instance
-    - trained sklearn feature scaler (`StandardScaler`)
-    - trained sklearn image classifier (`LinearSVC`) 
+    - trained feature scaler (`sklearn StandardScaler`)
+    - trained image classifier (`sklearn LinearSVC`) 
     - list of 1 or more window sizes to use in sliding window search
-  * The class defines a region of interest (ROI) to search for each selected window size. The regions were carefully chosen to minimize search area without sacrificing recognition accuracy. This design is critical to run-time performance.
+  * The class defines a `search band` for each supported window size--this is the region where the sliding window search is performed for that window size. These regions were carefully chosen to minimize search area without sacrificing recognition accuracy. This design is critical to run-time performance.
   * The sliding window search algorithm is found in `VehicleRecognizer.__call__()` (vehicles.py TODO).
   * Algorithm outline:
     - for each selected window size
-      + resize the window-specific ROI by the same scale as resizing the window to 64x64
-      + call `VehicleFeatureExtractor.set_full_image()` to pre-load extractor with resized ROI
-      + step a 64x64 window across and down the resized ROI (step-size is defined as 16 pixels)
+      + resize the window-specific search band by the scale required to resize the window to 64x64
+      + call `VehicleFeatureExtractor.set_full_image()` to pre-load extractor with resized search band
+      + step a 64x64 window across and down the resized search band (step-size is defined as 16 pixels = 75% overlap)
       + at each step, extract 64x64 tile (same size as training images)
         * call `VehicleFeatureExtractor.extract_tile_features()` to extract tile image features
         * use `clf.predict()` method to classify the tile as `vehicle` or `not-vehicle`
         * vehicle --> record tile box & match-strength score (calculated by `clf.decision_function()` method)
     - report list of vehicle-match boxes and corresponding match-strength scores
-  * VehicleFeatureExtractor `set_full_image()` and `extract_tile_features()` methods implement a caching scheme that minimizes image resizing and HOG feature extraction (by extracting HOG features once for each scaled ROI and sub-sampling on demand). This design is also critical to run-time performance.
+  * VehicleFeatureExtractor `set_full_image()` and `extract_tile_features()` methods implement a caching scheme that minimizes tile resizing and HOG feature extraction (by extracting HOG features once for each scaled ROI and sub-sampling on demand). This design is also critical to run-time performance.
       
-Here's the procedure I used to calibrated the window-specific ROI's: 
+Here's the procedure I used to calibrated the window-specific search bands: 
   * Extracted several images from the project video.
   * Recorded tight bounding-box sizes and positions for the vehicles in these images.
   * Plotted bounding-box size vs. bounding-box top & bottom positions (see below).
   * The plot shows a simple linear relationship between window size and vertical image position where vehicles of that size would be located.
-  * From the plot curves I estimated vertical ROI positions for a set of pre-defined window sizes, also enlarging the ROI's enough to allow for the window to slide up and down by 1 step from the center position.
+  * From the plot curves I estimated search band top/bottom positions for a set of pre-defined window sizes, also enlarging the search bands enough to allow for the window to slide up and down 1 step from the center position.
   
 ![Window-specific search bands][img_search_bands]
 
+Here is a video frame with search bands and example tiles for 32x32, 64x64, 96x96 and 128x128 sliding windows:
+
+![Search bands & sliding windows][img_sliding_windows]
+
+For the final project video I chose sliding window sizes of 64x64, 80x80 and 96x96, with 75% overlap. These sizes did an acceptable job of consistently matching vehicles in the video without excessive false positives. I found that tiles smaller than 64x64 and larger than 96x96 generated significant false positives. 
+
+I tried 25% and 50% overlap for faster performance, but 75% was the least overlap I tried that performed well enough at consistently matching vehicles. Less overlap resulted in significant gaps where vehicles would not be matched.
+
 #### 2. Show some examples of test images to demonstrate how your pipeline is working.  What did you do to optimize the performance of your classifier?
 
-Ultimately I searched on two scales using YCrCb 3-channel HOG features plus spatially binned color and histograms of color in the feature vector, which provided a nice result.  Here are some example images:
+Ultimately I searched on 3 scales using YUV 3-channel HOG features plus spatially binned color and histograms of color in the feature vector, which provided a nice result.  Here are some example images:
 
-![alt text][image4]
+![Vehicle recognition examples][img_recog_examples]
 ---
 
 ### Video Implementation
