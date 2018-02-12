@@ -277,27 +277,27 @@ Using match-strength score to weight the heatmap was critical to getting good pe
 
 Likely Failures:
 
-1. This implementation would undoubtedly fail in substantially reduced lighting conditions (dusk/dark). The reliance on contrast (HOG) and color would be compromised in much darker lighting.
-2. Because the vehicle recognition classifier is trained to detect the back & sides of vehicles, I believe it would fail to adequately detect oncoming vehicles, for example while driving on a 2-lane road.
-3. While mapping out the sliding window search bands, I noticed it was important--especially for small tile sizes that would detect far-off vehicles--to allow for some vertical shift in the search band to account for elevation changes in the road. I'm certain that this implementation would fail in the presence of severe elevation changes.
-4. My pipeline doesn't handle occlusions at all. For example, when 1 vehicle passes in front of another the detection pipeline 'sees' them as 1 vehicle.
+* This implementation would undoubtedly fail in substantially reduced lighting conditions (dusk/dark). The reliance on contrast (HOG) and color would be compromised in much darker lighting.
+* Because the vehicle recognition classifier is trained to detect the back & sides of vehicles, I believe it would fail to adequately detect oncoming vehicles, for example while driving on a 2-lane road.
+* While mapping out the sliding window search bands, I noticed it was important--especially for small tile sizes that would detect far-off vehicles--to allow for some vertical shift in the search band to account for elevation changes in the road. I'm certain that this implementation would fail in the presence of severe elevation changes.
+* My pipeline doesn't handle occlusions at all. For example, when 1 vehicle passes in front of another the detection pipeline 'sees' them as 1 vehicle.
 
 Implementation Issues & Room for Improvement:
 
-1. The overall pipeline is quite slow. The processing speed on my high-performance laptop is around 1.5 frames/sec -- far from real-time.
-  * I made an effort to restrict the number of sliding windows used in the main search algorithm. This certainly improves speed, but comes at the cost of detection sensitivity.
-  * I carefully designed the sliding window search algorithm to eliminate ALL redundant image resizing and HOG feature extraction. I believe this probably improved speed by around 10x, but it wasn't enough.
-  * I used the CProfile tool to profile the code, and discovered the main performance bottleneck to be the skimage HOG extraction function. The numpy histogram function is also a significant bottleneck.
-  * With more time to improve speed, I would do the following:
+* The overall pipeline is quite slow. The processing speed on my high-performance laptop is around 1.5 frames/sec -- far from real-time.
+  + I made an effort to restrict the number of sliding windows used in the main search algorithm. This certainly improves speed, but comes at the cost of detection sensitivity.
+  + I carefully designed the sliding window search algorithm to eliminate ALL redundant image resizing and HOG feature extraction. I believe this probably improved speed by around 10x, but it wasn't enough.
+  + I used the CProfile tool to profile the code, and discovered the main performance bottleneck to be the skimage HOG extraction function. The numpy histogram function is also a significant bottleneck.
+  + With more time to improve speed, I would do the following:
     - Replace skimage hog() function with OpenCV HOG descriptor implementation. I've seen reports this is 20-30x faster.
     - Replace NumPy histogram() function with OpenCV calcHist(). Again the OpenCV function should be substantially faster.
     - Explore performing HOG feature extraction and sub-sampling on GPU. OpenCV has a GPU implementation of the HOG extraction class.
-2. The classifier doesn't do a good job of recognizing vehicles when the view is nearly from the side (as opposed to from behind).
-  * My implementation only classifies square tiles. I think it would help to allow for tiles with a wider aspect ratio, perhaps by using an additional classifier, or by doing a non-uniform resize of wide tile sizes to square.
-  * My implementation sweeps square sliding windows all the way across the field of view, but this isn't really how the viewing angles work. I think it would be better to use square tiles in the center, and gradually deform to wider tiles as the search widens left/right of center.
-3. The final vehicle bounding-box measurement is not very accurate.
-  * I think one method for improving it would be to use the same threshold & label objects method, but then 'grow' the labeled objects to some lower threshold.
-  * This would be a similar technique to the hysteresis threshold method of the Canny edge detector--use a high threshold to detect strong edges/objects, then a lower threshold to fill in connected pixels.
-4. Clearly this implementation would benefit from use of a more sophisticated tracking algorithm to deal with occlusions, noisy frames, glare, shadows, etc.  
+* The classifier doesn't do a good job of recognizing vehicles when the view is nearly from the side (as opposed to from behind).
+  + My implementation only classifies square tiles. I think it would help to allow for tiles with a wider aspect ratio, perhaps by using an additional classifier, or by doing a non-uniform resize of wide tile sizes to square.
+  + My implementation sweeps square sliding windows all the way across the field of view, but this isn't really how the viewing angles work. I think it would be better to use square tiles in the center, and gradually deform to wider tiles as the search widens left/right of center.
+* The final vehicle bounding-box measurement is not very accurate.
+  + I think one method for improving it would be to use the same threshold & label objects method, but then 'grow' the labeled objects to some lower threshold.
+  + This would be a similar technique to the hysteresis threshold method of the Canny edge detector--use a high threshold to detect strong edges/objects, then a lower threshold to fill in connected pixels.
+* Clearly this implementation would benefit from use of a more sophisticated tracking algorithm to deal with occlusions, noisy frames, glare, shadows, etc.  
 
 I'm sure there are many more issues that could be discussed--this seems like more of a starting point than a finished product! This project was challenging and time consuming, and I learned so much along the way. Looking forward to the next one.
