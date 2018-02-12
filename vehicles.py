@@ -12,6 +12,9 @@ from sklearn import svm
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
 from sklearn.metrics import classification_report
 
 
@@ -373,6 +376,7 @@ def train_LinearSVC(ftr_extractor, test_size, svc_C):
 
     # output metrics
     y_pred = clf.predict(X_test)
+    print('Accuracy: %.4f' % accuracy_score(y_test, y_pred))
     print('Precision: %.4f' % precision_score(y_test, y_pred))
     print('Recall: %.4f' % recall_score(y_test, y_pred))
     

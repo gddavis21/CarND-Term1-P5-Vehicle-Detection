@@ -153,7 +153,14 @@ My code for training a linear SVM classifier consists of the following:
     - saves feature extraction parameters, feature scaler and trained classifier to pickle file
     - enables efficient re-use of trained classifier
     
-NOTE: Factoring the classifier training implementation into the module functions made it easy to train, save and test classifiers with a variety of feature extraction parameters (by creating other similar top-level scripts with alternative parameter selections).
+NOTE: Factoring the classifier training implementation into module utility functions made it easy to train, save and test classifiers with a variety of feature extraction parameters (by creating other similar top-level scripts with alternative parameter selections). For example, in addition to training a HOG+Spatial+Histogram classifier, I also trained HOG-only, HOG+Spatial and HOG+Histogram variations:
+
+|  HOG  |  Spatial | Histogram | Accuracy  | Precision |  Recall   |
+|:-----:|:--------:|:---------:|:---------:|:---------:|:---------:|
+|   X   |     -    |     -     | 0.9894    | 0.9936    | 0.9845    |
+|   X   |     X    |     -     | 0.9927    | 0.9933    | 0.9922    |
+|   X   |     -    |     X     | 0.9936    | 0.9938    | 0.9932    |
+|   X   |     X    |     X     | 0.9944    | 0.9953    | 0.9930    |
 
 ### Sliding Window Search
 
@@ -200,7 +207,7 @@ I tried 25% and 50% overlap for faster performance, but 75% was the least overla
 
 Ultimately I searched on 3 scales using YUV 3-channel HOG features plus spatially binned color and histograms of color in the feature vector, which provided a nice result.  Below are some example images.
 
-NOTE: I color-coded the vehicle match boxes to indicate a few levels of match-strength score (0 < red < yellow < green < blue). This technique proved useful, both for confirming classifier performance, and for choosing an appropriate threshold for the false positives filter (see next section).
+NOTE: I color-coded the vehicle match boxes to indicate levels of match-strength score (0 < red < yellow < green < blue). This technique proved useful, both for visually confirming classifier performance, and as a guide for choosing an appropriate threshold for filtering false positives (see next section).
 
 ![Vehicle recognition examples][img_recog_examples]
 
@@ -208,9 +215,9 @@ The `sklearn.LinearSVC` classifier exposes a regularization/penalty parameter `C
 
 The code for the grid search is in script `optimize_LinearSVC_HOG_Spatial_Hist_YUV.py`:
   * configures HOG, spatial binning & color histogram feaure extraction parameters
-  * calls function `vehicles.optimize_LinearSVC()` to perform the grid search
+  * calls function `vehicles.optimize_LinearSVC()` to perform the grid search:
     - loads training data & splits into training/test sets
-    - performs grid search (using `sklearn GridSearchCV()`) to estimate precision & recall performance on range of `C` values
+    - performs grid search (using `sklearn GridSearchCV()`) to estimate accuracy, precision & recall performance over user-defined range of `C` values
     
 |     C      | Accuracy  | Precision |  Recall   |
 |:----------:|:---------:|:---------:|:---------:|
@@ -236,19 +243,19 @@ Here's a [link to my video result](./output_videos/project_video_out.mp4)
 
 #### 2. Describe how (and identify where in your code) you implemented some kind of filter for false positives and some method for combining overlapping bounding boxes.
 
-Class `vehicles.VehicleDetector` (vehicles.py TODO) applies frame-by-frame vehicle matching (via `VehicleRecognizer`) and then applies an algorithm for filtering false positives out of the match results.
-  * record positions and match-strength scores of vehicle matches in each video frame
-  * create a frame-by-frame `heatmap`
+Class `vehicles.VehicleDetector` (vehicles.py TODO) applies frame-by-frame vehicle matching (via `VehicleRecognizer`) and then applies an algorithm for filtering false positives out of the match results:
+  * records positions and match-strength scores of vehicle matches in each video frame
+  * creates a frame-by-frame `heatmap`
     - start with an empty (zero) heatmap same size as frame
     - within each vehicle match box, add the match-strength score
     - keep heatmaps for the past N frames (N is a user-defined parameter--the `history depth`)
-  * combine heatmaps from last N frames, and threshold the combined heatmap (threshold T is a user-defined parameter)
-  * use `scipy.measurements.label()` to identify objects in the combined heatmap
-  * assuming each labeled object corresponds to a vehicle, compute bounding box of each object
-  * report list of object/vehicle bounding boxes for each frame
+  * combines heatmaps from last N frames, and thresholds the combined heatmap (`heat threshold` is a user-defined parameter)
+  * uses `scipy.measurements.label()` to identify & label objects in the combined heatmap
+  * assuming each labeled object corresponds to a vehicle, computes bounding box of each object
+  * reports list of object/vehicle bounding boxes for each frame
   
 Using match-strength score to weight the heatmap was critical to getting good performance out of the false positives filter. 
-  * Originally I weighted all matches equally
+  * Originally I weighted all matches equally.
   * This scheme made it very difficult to eliminate false positives without eliminating true matches.
   * It turned out that nearly all false positives have a relative low match score, while the true vehicle matches tend to be 'covered' by multiple medium/high-score boxes.
   * Adding up match-strength scores led to consistently good separation between false positives and true matches--critical for any threshold-based technique.
