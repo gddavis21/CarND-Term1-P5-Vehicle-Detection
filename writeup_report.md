@@ -28,37 +28,37 @@ The goals / steps of this project are the following:
 My implementation for this project consists of a Python module (vehicles.py) of classes and utility functions that make up the core functionality, and several scripts that leverage this module to implement the various tasks required for the project.
 
 * Module `vehicles.py`
-  + class `VehicleFeatureExtractor` (vehicles.py TODO)
+  + class `VehicleFeatureExtractor` (vehicles.py 25-302)
     - implements image-based feature extraction for use with image classifier
     - supports any combination of Histogram of Oriented Gradients (HOG) features, binned color features, and color histogram features
-  + function `load_training_data()` (vehicles.py TODO)
+  + function `load_training_data()` (vehicles.py 305-349)
     - loads vehicle & non-vehicle training images from disk
     - extracts image features & labels (using `VehicleFeatureExtractor`)
-  + function `train_LinearSVC()` (vehicles.py TODO)
+  + function `train_LinearSVC()` (vehicles.py 351-375)
     - fits feature normalization "scaler" to extracted training features
     - splits training data into training/test sets
     - trains linear SVM classifier
-  + function `optimize_LinearSVC()` (vehicles.py TODO)
+  + function `optimize_LinearSVC()` (vehicles.py 386-442)
     - fits feature normalization "scaler" to extracted training features
     - splits training data into training/test sets
     - cross-validates precision/recall metrics over range of SVM parameter values
-  + function `save_classifier()` (vehicles.py TODO)
+  + function `save_classifier()` (vehicles.py 445-463)
     - saves feature-extraction parameters, trained feature scaler & trained classifier to pickle file
     - enables efficient re-use of trained classifier
-  + function `load_classifier()` (vehicles.py TODO)
+  + function `load_classifier()` (vehicles.py 466-483)
     - loads previously saved feature-extraction parameters, trained feature scaler & trained classifier from pickle file
     - enables efficient re-use of trained classifier
-  + class `VehicleRecognizer` (vehicles.py TODO)
+  + class `VehicleRecognizer` (vehicles.py 511-596)
     - uses supplied `VehicleFeatureExtractor`, trained feature scaler and trained image classifier
     - performs sliding-window search on given image(s) for vehicle "matches"
     - for each image, returns vehicle-match bounding boxes & corresponding match-strength scores
-  + class `VehicleDetector` (vehicles.py TODO)
+  + class `VehicleDetector` (vehicles.py 599-693)
     - track vehicles in a time series of images (video stream) 
     - uses supplied `VehicleRecognizer` to identify candidate vehicle matches
     - implements additional false positive filtering
     - for each image, returns bounding boxes of tracked vehicles
 * Module `vision.py`
-  + class `CameraCal` (vision.py TODO)
+  + class `CameraCal` (vision.py 5-102)
     - computes camera calibration from checkerboard images
     - applies calibration to undistort given image(s)
     - this class was integrated from the previous project
@@ -95,12 +95,12 @@ You're reading it!
 
 #### 1. Explain how (and identify where in your code) you extracted HOG features from the training images.
 
-I used a combination of HOG, binned color and color histogram features extracted from the training images. Feature extraction is implemented in class vehicles.VehicleFeatureExtractor (vehicles.py TODO).
+I used a combination of HOG, binned color and color histogram features extracted from the training images. Feature extraction is implemented in class vehicles.VehicleFeatureExtractor (vehicles.py line 45).
   * VehicleFeatureExtractor instance is constructed with user-defined combination of HOG, spatial and histogram extraction parameters.
-  * User extracts features from each training image by calling method VehicleFeatureExtractor.extract_image_features() (vehicles.py TODO).
-  * extract_image_features() calls method VehicleFeatureExtractor._hog_features() (vehicles.py TODO) to extract HOG features.
-  * extract_image_features() calls method VehicleFeatureExtractor._bin_spatial() (vehicles.py TODO) to extract binned spatial features.
-  * extract_image_features() calls method VehicleFeatureExtractor._color_histogram() (vehicles.py TODO) to extract color histogram features.
+  * User extracts features from each training image by calling method `VehicleFeatureExtractor.extract_image_features()` (vehicles.py line 111).
+  * extract_image_features() calls method `VehicleFeatureExtractor._hog_features()` (vehicles.py line 199) to extract HOG features.
+  * extract_image_features() calls method `VehicleFeatureExtractor._bin_spatial()` (vehicles.py line 129) to extract binned spatial features.
+  * extract_image_features() calls method `VehicleFeatureExtractor._color_histogram()` (vehicles.py line 157) to extract color histogram features.
 
 I started by reading in all the `vehicle` and `non-vehicle` images.  Here is an example of one of each of the `vehicle` and `non-vehicle` classes:
 
@@ -140,12 +140,12 @@ My code for training a linear SVM classifier consists of the following:
     - creates `VehicleFeatureExtractor` instance
     - calls `vehicles.train_LinearSVC()` to train the classifier (see below)
     - calls `vehicles.save_classifier()` to save the trained classifier to a file (see below)
-  * function `vehicles.train_LinearSVC()` (vehicles.py TODO)
-    - calls `vehicles.load_training_data()` (vehicles.py TODO) to load training images and extract features & labels
+  * function `vehicles.train_LinearSVC()` (vehicles.py line 351)
+    - calls `vehicles.load_training_data()` (vehicles.py line 305) to load training images and extract features & labels
     - fits an `sklearn.StandardScaler` to the feature data and normalizes the features
     - uses `sklearn.train_test_split()` to randomly split training data into training & test sets
     - fits an `sklearn.LinearSVC` classifier to the training set
-  * function `vehicles.save_classifier()` (vehicles.py TODO)
+  * function `vehicles.save_classifier()` (vehicles.py line 445)
     - saves feature extraction parameters, feature scaler and trained classifier to pickle file
     - enables efficient re-use of trained classifier
     
@@ -162,14 +162,14 @@ NOTE: Factoring the classifier training implementation into module utility funct
 
 #### 1. Describe how (and identify where in your code) you implemented a sliding window search.  How did you decide what scales to search and how much to overlap windows?
 
-Class `vehicles.VehicleRecognizer` (vehicles.py TODO) performs a sliding window search for vehicle matches on user-supplied images.
+Class `vehicles.VehicleRecognizer` (vehicles.py line 511) performs a sliding window search for vehicle matches on user-supplied images.
   * `VehicleRecognizer` is constructed with the following user-defined arguments:
     - `VehicleFeatureExtractor` instance
     - trained feature scaler (`sklearn StandardScaler`)
     - trained image classifier (`sklearn LinearSVC`) 
     - list of 1 or more window sizes to use in sliding window search
   * The class defines a `search band` for each supported window size--this is the region where the sliding window search is performed for that window size. These regions were carefully chosen to minimize search area without sacrificing recognition accuracy. This design is critical to run-time performance.
-  * The sliding window search algorithm is found in `VehicleRecognizer.__call__()` (vehicles.py TODO).
+  * The sliding window search algorithm is found in `VehicleRecognizer.__call__()` (vehicles.py line 526).
   * Algorithm outline:
     - for each selected window size
       + resize the window-specific search band by the scale required to resize the window to 64x64
@@ -239,7 +239,7 @@ Here's a [link to my video result](./output_videos/project_video_out.mp4)
 
 #### 2. Describe how (and identify where in your code) you implemented some kind of filter for false positives and some method for combining overlapping bounding boxes.
 
-Class `vehicles.VehicleDetector` (vehicles.py TODO) applies frame-by-frame vehicle matching (via `VehicleRecognizer`) and then applies an algorithm for filtering false positives out of the match results:
+Class `vehicles.VehicleDetector` (vehicles.py line 599) applies frame-by-frame vehicle matching (via `VehicleRecognizer`) and then applies an algorithm for filtering false positives out of the match results:
   * records positions and match-strength scores of vehicle matches in each video frame
   * creates a frame-by-frame `heatmap`
     - start with an empty (zero) heatmap same size as frame
@@ -273,7 +273,31 @@ Using match-strength score to weight the heatmap was critical to getting good pe
 
 ### Discussion
 
-#### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
+#### Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
+Likely Failures:
 
+1. This implementation would undoubtedly fail in substantially reduced lighting conditions (dusk/dark). The reliance on contrast (HOG) and color would be compromised in much darker lighting.
+2. Because the vehicle recognition classifier is trained to detect the back & sides of vehicles, I believe it would fail to adequately detect oncoming vehicles, for example while driving on a 2-lane road.
+3. While mapping out the sliding window search bands, I noticed it was important--especially for small tile sizes that would detect far-off vehicles--to allow for some vertical shift in the search band to account for elevation changes in the road. I'm certain that this implementation would fail in the presence of severe elevation changes.
+4. My pipeline doesn't handle occlusions at all. For example, when 1 vehicle passes in front of another the detection pipeline 'sees' them as 1 vehicle.
+
+Implementation Issues & Room for Improvement:
+
+1. The overall pipeline is quite slow. The processing speed on my high-performance laptop is around 1.5 frames/sec -- far from real-time.
+  * I made an effort to restrict the number of sliding windows used in the main search algorithm. This certainly improves speed, but comes at the cost of detection sensitivity.
+  * I carefully designed the sliding window search algorithm to eliminate ALL redundant image resizing and HOG feature extraction. I believe this probably improved speed by around 10x, but it wasn't enough.
+  * I used the CProfile tool to profile the code, and discovered the main performance bottleneck to be the skimage HOG extraction function. The numpy histogram function is also a significant bottleneck.
+  * With more time to improve speed, I would do the following:
+    - Replace skimage hog() function with OpenCV HOG descriptor implementation. I've seen reports this is 20-30x faster.
+    - Replace NumPy histogram() function with OpenCV calcHist(). Again the OpenCV function should be substantially faster.
+    - Explore performing HOG feature extraction and sub-sampling on GPU. OpenCV has a GPU implementation of the HOG extraction class.
+2. The classifier doesn't do a good job of recognizing vehicles when the view is nearly from the side (as opposed to from behind).
+  * My implementation only classifies square tiles. I think it would help to allow for tiles with a wider aspect ratio, perhaps by using an additional classifier, or by doing a non-uniform resize of wide tile sizes to square.
+  * My implementation sweeps square sliding windows all the way across the field of view, but this isn't really how the viewing angles work. I think it would be better to use square tiles in the center, and gradually deform to wider tiles as the search widens left/right of center.
+3. The final vehicle bounding-box measurement is not very accurate.
+  * I think one method for improving it would be to use the same threshold & label objects method, but then 'grow' the labeled objects to some lower threshold.
+  * This would be a similar technique to the hysteresis threshold method of the Canny edge detector--use a high threshold to detect strong edges/objects, then a lower threshold to fill in connected pixels.
+4. Clearly this implementation would benefit from use of a more sophisticated tracking algorithm to deal with occlusions, noisy frames, glare, shadows, etc.  
+
+I'm sure there are many more issues that could be discussed--this seems like more of a starting point than a finished product! This project was challenging and time consuming, and I learned so much along the way. Looking forward to the next one.
