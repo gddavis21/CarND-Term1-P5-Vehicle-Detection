@@ -8,7 +8,7 @@ import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 from skimage.feature import hog
 import sklearn.preprocessing
-import sklearn.svm
+from sklearn import svm
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import GridSearchCV
@@ -404,14 +404,15 @@ def optimize_LinearSVC(ftr_extractor, svc_C_values):
     # optimize SVC regularization parameter via cross-validation
     param_grid = {'C': svc_C_values}
 
-    for score in ['precision', 'recall']:
+    for score in ['accuracy', 'precision', 'recall']:
         print("# Tuning hyper-parameters for %s" % score)
         print()
 
         clf = GridSearchCV(
             svm.LinearSVC(), 
             param_grid, 
-            scoring='%s_macro' % score, 
+            #scoring='%s_macro' % score, 
+            scoring=score,
             verbose=3)
             
         clf.fit(X_train, y_train)

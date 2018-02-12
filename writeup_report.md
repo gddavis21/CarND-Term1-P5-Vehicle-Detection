@@ -198,32 +198,72 @@ I tried 25% and 50% overlap for faster performance, but 75% was the least overla
 
 #### 2. Show some examples of test images to demonstrate how your pipeline is working.  What did you do to optimize the performance of your classifier?
 
-Ultimately I searched on 3 scales using YUV 3-channel HOG features plus spatially binned color and histograms of color in the feature vector, which provided a nice result.  Here are some example images:
+Ultimately I searched on 3 scales using YUV 3-channel HOG features plus spatially binned color and histograms of color in the feature vector, which provided a nice result.  Below are some example images.
+
+NOTE: I color-coded the vehicle match boxes to indicate a few levels of match-strength score (0 < red < yellow < green < blue). This technique proved useful, both for confirming classifier performance, and for choosing an appropriate threshold for the false positives filter (see next section).
 
 ![Vehicle recognition examples][img_recog_examples]
+
+The `sklearn.LinearSVC` classifier exposes a regularization/penalty parameter `C` which is generally critical to classifier performance. I executed a `grid search` to estimate classifier performance via 3-fold cross validation at different `C` values.
+
+The code for the grid search is in script `optimize_LinearSVC_HOG_Spatial_Hist_YUV.py`:
+  * configures HOG, spatial binning & color histogram feaure extraction parameters
+  * calls function `vehicles.optimize_LinearSVC()` to perform the grid search
+    - loads training data & splits into training/test sets
+    - performs grid search (using `sklearn GridSearchCV()`) to estimate precision & recall performance on range of `C` values
+    
+|     C      | Accuracy  | Precision |  Recall   |
+|:----------:|:---------:|:---------:|:---------:|
+|    0.00001 | 0.988     | 0.993     | 0.983     |
+|    0.0001  | 0.993     | 0.996     | 0.990     |
+|    0.001   | 0.993     | 0.996     | 0.990     |
+|    0.01    | 0.993     | 0.996     | 0.990     |
+|    0.1     | 0.993     | 0.996     | 0.990     |
+|    1.0     | 0.993     | 0.996     | 0.990     |
+|   10.0     | 0.993     | 0.996     | 0.990     |
+|  100.0     | 0.993     | 0.996     | 0.990     |
+| 1000.0     | 0.993     | 0.996     | 0.990     |
+
+It's clear from these results that the classifier performs very similarly for a wide range of `C` values. I chose C=0.01 for training my project classifier.
+
 ---
 
 ### Video Implementation
 
 #### 1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (somewhat wobbly or unstable bounding boxes are ok as long as you are identifying the vehicles most of the time with minimal false positives.)
-Here's a [link to my video result](./project_video.mp4)
+Here's a [link to my video result](./output_videos/project_video_out.mp4)
 
 
 #### 2. Describe how (and identify where in your code) you implemented some kind of filter for false positives and some method for combining overlapping bounding boxes.
 
-I recorded the positions of positive detections in each frame of the video.  From the positive detections I created a heatmap and then thresholded that map to identify vehicle positions.  I then used `scipy.ndimage.measurements.label()` to identify individual blobs in the heatmap.  I then assumed each blob corresponded to a vehicle.  I constructed bounding boxes to cover the area of each blob detected.  
-
+Class `vehicles.VehicleDetector` (vehicles.py TODO) applies frame-by-frame vehicle matching (via `VehicleRecognizer`) and then applies an algorithm for filtering false positives out of the match results.
+  * record positions and match-strength scores of vehicle matches in each video frame
+  * create a frame-by-frame `heatmap`
+    - start with an empty (zero) heatmap same size as frame
+    - within each vehicle match box, add the match-strength score
+    - keep heatmaps for the past N frames (N is a user-defined parameter--the `history depth`)
+  * combine heatmaps from last N frames, and threshold the combined heatmap (threshold T is a user-defined parameter)
+  * use `scipy.measurements.label()` to identify objects in the combined heatmap
+  * assuming each labeled object corresponds to a vehicle, compute bounding box of each object
+  * report list of object/vehicle bounding boxes for each frame
+  
+Using match-strength score to weight the heatmap was critical to getting good performance out of the false positives filter. 
+  * Originally I weighted all matches equally
+  * This scheme made it very difficult to eliminate false positives without eliminating true matches.
+  * It turned out that nearly all false positives have a relative low match score, while the true vehicle matches tend to be 'covered' by multiple medium/high-score boxes.
+  * Adding up match-strength scores led to consistently good separation between false positives and true matches--critical for any threshold-based technique.
+  
 Here's an example result showing the heatmap from a series of frames of video, the result of `scipy.ndimage.measurements.label()` and the bounding boxes then overlaid on the last frame of video:
 
 ### Here are six frames and their corresponding heatmaps:
 
-![alt text][image5]
+![Vehicle matches & heat-maps][img_recog_heat]
 
 ### Here is the output of `scipy.ndimage.measurements.label()` on the integrated heatmap from all six frames:
-![alt text][image6]
+![Labeled vehicle objects][img_vis_labels]
 
 ### Here the resulting bounding boxes are drawn onto the last frame in the series:
-![alt text][image7]
+![Vehicle detection][img_vis_detect]
 
 
 
